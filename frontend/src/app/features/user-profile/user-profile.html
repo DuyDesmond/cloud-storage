@@ -1,0 +1,116 @@
+<div class="profile-wrapper">
+  <!-- 1. HEADER SECTION (Listens to profile avatar clicks) -->
+  <app-dashboard-header (upload)="onUploadTrigger()"></app-dashboard-header>
+
+  <!-- 2. WORKSPACE CONTAINER -->
+  <div class="workspace-container">
+    <!-- Side Panel handles storage & main file views -->
+    <app-side-panel
+      [usedStorage]="usedStorage()"
+      [totalStorage]="totalStorage()"
+      [activeNav]="activeSideNav()"
+      (navChange)="switchNav($event)"
+    ></app-side-panel>
+
+    <!-- MAIN CANVAS -->
+    <main class="main-canvas">
+      <div class="content-container">
+        <!-- Profile Header Card -->
+        <section class="glass-card profile-card">
+          <div class="avatar-wrapper">
+            <div class="avatar-ring">
+              <mat-icon class="avatar-icon">account_circle</mat-icon>
+            </div>
+            <button
+              mat-mini-fab
+              color="primary"
+              class="edit-btn"
+              aria-label="Edit photo"
+            >
+              <mat-icon>edit</mat-icon>
+            </button>
+          </div>
+
+          <div class="profile-details">
+            <h1 class="user-name">{{ user().name }}</h1>
+            <p class="user-email">{{ user().email }}</p>
+          </div>
+        </section>
+
+        <!-- Bento Grid for Details -->
+        <div class="bento-grid">
+          <!-- Storage Summary -->
+          <div class="glass-card storage-card">
+            <div class="card-header">
+              <h3 class="card-title">Storage Summary</h3>
+              <button mat-button color="primary" class="manage-btn">
+                Manage Plans
+              </button>
+            </div>
+
+            <div class="storage-details">
+              <div class="storage-numbers">
+                <p class="huge-text">
+                  {{ usedStorage() }}<span class="unit">GB</span>
+                </p>
+                <p class="sub-text">Used of {{ totalStorage() }}GB total</p>
+              </div>
+
+              <div class="progress-container">
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="(usedStorage() / totalStorage()) * 100"
+                ></mat-progress-bar>
+              </div>
+
+              <div class="category-grid">
+                @for (cat of storageCategories(); track cat.name) {
+                <div class="category-tile">
+                  <mat-icon [class]="cat.colorClass">{{ cat.icon }}</mat-icon>
+                  <span class="cat-label">{{ cat.name }}</span>
+                  <strong class="cat-size">{{ cat.size }}</strong>
+                </div>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Account Actions Section -->
+        <section class="actions-section">
+          <h3 class="section-title">Account Actions</h3>
+          <div class="glass-card actions-list">
+            @for (action of accountActions(); track action.title) {
+            <div
+              class="action-item"
+              [class.danger-item]="action.isDanger"
+              (click)="onActionClick(action)"
+            >
+              <div class="action-left">
+                <mat-icon class="action-icon">{{ action.icon }}</mat-icon>
+                <div class="action-text">
+                  <p class="action-title">{{ action.title }}</p>
+                  <p class="action-desc">{{ action.description }}</p>
+                </div>
+              </div>
+              <mat-icon class="chevron-icon">chevron_right</mat-icon>
+            </div>
+            }
+          </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="profile-footer">
+          <p>© 2026 Nephos Cloud Storage. All rights reserved.</p>
+          <div class="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+          </div>
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <!-- 3. MOBILE BOTTOM NAVIGATION -->
+  <app-mobile-bottom-nav (upload)="onUploadTrigger()"></app-mobile-bottom-nav>
+</div>

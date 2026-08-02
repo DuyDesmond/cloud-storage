@@ -1,0 +1,284 @@
+@use "../../../../shared/styles/brand-logo" as brand;
+
+@mixin mat-icon-size($size) {
+  font-size: $size !important;
+  width: $size !important;
+  height: $size !important;
+  line-height: $size !important;
+}
+
+.login-page {
+  position: relative;
+  min-height: 100vh;
+  padding: 32px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(
+    circle at top left,
+    #d8e2ff 0%,
+    #f8f9ff 48%,
+    #ffffff 100%
+  );
+  overflow: hidden;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+}
+
+.background-shape {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(90px);
+  opacity: 0.7;
+}
+
+.bg-shape-1 {
+  width: 340px;
+  height: 340px;
+  background: rgba(0, 88, 188, 0.18);
+  top: -140px;
+  left: -120px;
+}
+
+.bg-shape-2 {
+  width: 280px;
+  height: 280px;
+  background: rgba(80, 97, 107, 0.14);
+  top: 50%;
+  right: -100px;
+  transform: translateY(-50%);
+}
+
+.login-viewport {
+  position: relative;
+  width: min(100%, 560px);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.brand-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.brand-icon {
+  @include brand.nephos-brand;
+  --brand-size: 50px;
+  width: calc(var(--brand-size, 40px) * 1.8);
+  height: calc(var(--brand-size, 40px) * 1.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  mat-icon {
+    color: #fff;
+    @include mat-icon-size(36px);
+  }
+}
+
+.logo-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  @include brand.nephos-brand;
+}
+
+.brand-panel h1 {
+  margin: 0;
+  letter-spacing: -0.04em;
+  @include brand.nephos-brand;
+}
+
+.brand-panel p {
+  margin: 0;
+  color: #4f5961;
+  @include brand.nephos-brand;
+}
+
+.login-card {
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 20px 60px rgba(0, 31, 66, 0.08);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+
+.login-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 32px 32px 0;
+}
+
+.login-header h2 {
+  margin: 0;
+  font-size: 2rem;
+  color: #102033;
+}
+
+.login-header p {
+  margin: 0;
+  margin-top: 0.5rem;
+  color: #5c6672;
+  font-size: 0.95rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 18px;
+  padding: 32px;
+}
+
+.auth-back {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 20;
+
+  button {
+    color: #50616b;
+  }
+}
+
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+
+.full-width {
+  width: 100%;
+
+  /* Form Field Icons Fixes */
+  [matPrefix] {
+    margin-left: 10px;
+    color: #5c6672;
+    @include mat-icon-size(20px);
+  }
+
+  [matSuffix] {
+    mat-icon {
+      margin-right: 10px;
+      color: #5c6672;
+      @include mat-icon-size(20px);
+    }
+  }
+}
+
+.error-banner {
+  background-color: #fff3f3;
+  border: 1px solid #ffced2;
+  color: #9f1f1f;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 16px 32px 0;
+  font-size: 0.95rem;
+}
+
+.field-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.field-row a,
+.account-link a,
+.footer-links a,
+.link-secondary {
+  color: #0058bc;
+}
+
+.link-secondary {
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.link-secondary:hover,
+.account-link a:hover,
+.footer-links a:hover {
+  text-decoration: underline;
+}
+
+mat-checkbox {
+  margin: 0;
+}
+
+/* Submit Button & Icon Fixes */
+.submit-button {
+  width: 100%;
+  height: 56px;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgba(0, 88, 188, 0.18);
+  background-color: #0058bc;
+
+  .button-content {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+
+    mat-icon {
+      @include mat-icon-size(20px);
+    }
+  }
+}
+
+.account-link {
+  padding: 0 32px 32px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  color: #5c6672;
+  font-size: 0.95rem;
+}
+
+.account-link a {
+  font-weight: 700;
+}
+
+.footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding-bottom: 24px;
+  color: #6b7587;
+  font-size: 0.92rem;
+}
+
+.footer-links a {
+  text-decoration: none;
+}
+
+@media (max-width: 600px) {
+  .login-page {
+    padding: 24px 16px;
+  }
+
+  .login-card {
+    border-radius: 28px;
+  }
+
+  .account-link {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .error-banner {
+    margin-left: 24px;
+    margin-right: 24px;
+  }
+}

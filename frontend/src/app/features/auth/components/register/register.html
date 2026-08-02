@@ -1,0 +1,170 @@
+<div class="minimal-auth-container">
+  <div class="auth-back">
+    <button mat-icon-button routerLink="/" aria-label="Go back to homepage">
+      <mat-icon>arrow_back</mat-icon>
+    </button>
+  </div>
+
+  <div class="bg-glow glow-1"></div>
+  <div class="bg-glow glow-2"></div>
+
+  <mat-card class="auth-box">
+    <header class="auth-header">
+      <h1>
+        <a routerLink="/" class="logo-area">
+          <img
+            src="/icon_nephos_logo.png"
+            class="brand-logo-img"
+            alt="Nephos Logo"
+          />
+          <span class="brand-name">Nephos</span>
+        </a>
+      </h1>
+      <p>Your one-stop storage solution.</p>
+    </header>
+
+    @if (errorMessage()) {
+    <div class="alert-banner" role="alert">{{ errorMessage() }}</div>
+    }
+
+    <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" class="auth-form">
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="full-width"
+      >
+        <mat-label>Full Name</mat-label>
+        <input matInput type="text" formControlName="username" />
+        <mat-icon matSuffix>person</mat-icon>
+        @if (registerForm.get("username")?.hasError("required")) {
+        <mat-error>Full Name is required</mat-error>
+        }
+      </mat-form-field>
+
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="full-width"
+      >
+        <mat-label>Email Address</mat-label>
+        <input
+          matInput
+          type="email"
+          formControlName="email"
+          autocomplete="email"
+        />
+        <mat-icon matSuffix>mail</mat-icon>
+        @if (registerForm.get("email")?.hasError("required")) {
+        <mat-error>Email Address is required</mat-error>
+        } @else if (registerForm.get("email")?.hasError("email")) {
+        <mat-error>Please enter a valid email address</mat-error>
+        }
+      </mat-form-field>
+
+      <div class="password-row">
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="full-width"
+        >
+          <mat-label>Password</mat-label>
+          <input
+            matInput
+            [type]="showPassword ? 'text' : 'password'"
+            formControlName="password"
+            autocomplete="new-password"
+          />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+            (click)="togglePassword()"
+          >
+            <mat-icon>
+              {{ showPassword ? "visibility_off" : "visibility" }}
+            </mat-icon>
+          </button>
+          @if (registerForm.get("password")?.hasError("required")) {
+          <mat-error>Password is required</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="full-width"
+        >
+          <mat-label>Confirm</mat-label>
+          <input
+            matInput
+            [type]="showConfirmPassword ? 'text' : 'password'"
+            formControlName="confirmPassword"
+            autocomplete="new-password"
+          />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            [attr.aria-label]="showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'"
+            (click)="toggleConfirmPassword()"
+          >
+            <mat-icon>
+              {{ showConfirmPassword ? "visibility_off" : "visibility" }}
+            </mat-icon>
+          </button>
+          @if (registerForm.get("confirmPassword")?.hasError("required")) {
+          <mat-error>Confirm Password is required</mat-error>
+          } @else if
+          (registerForm.get("confirmPassword")?.hasError("passwordMismatch")) {
+          <mat-error>Passwords do not match</mat-error>
+          }
+        </mat-form-field>
+      </div>
+
+      <div class="terms-row">
+        <mat-checkbox formControlName="terms">
+          I agree to the
+          <a routerLink="/terms" class="inline-link">Terms of Service</a> and
+          <a routerLink="/privacy" class="inline-link">Privacy Policy</a>.
+        </mat-checkbox>
+        @if (registerForm.get('terms')?.touched &&
+        registerForm.get('terms')?.hasError('requiredTrue')) {
+        <div class="checkbox-error" role="alert">
+          You must accept the terms to proceed.
+        </div>
+        }
+      </div>
+
+      <div class="auth-actions">
+        <button
+          mat-flat-button
+          color="primary"
+          type="submit"
+          class="submit-button"
+          [disabled]="!isFormReady || isLoading() || registerForm.invalid"
+        >
+          @if (isLoading()) {
+          <mat-spinner diameter="20"></mat-spinner>
+          <span>Creating Account...</span>
+          } @else {
+          <span>Create Free Account</span>
+          }
+        </button>
+
+        <div class="footer-account-link">
+          <span>Already have a Nephos account?</span>
+          <a routerLink="/login" class="text-link">Log in here</a>
+        </div>
+      </div>
+    </form>
+  </mat-card>
+
+  <nav class="secondary-nav">
+    <a routerLink="/help">Help Center</a>
+    <span class="dot"></span>
+    <a routerLink="/security">Security</a>
+    <span class="dot"></span>
+    <a routerLink="/status">Status</a>
+  </nav>
+</div>

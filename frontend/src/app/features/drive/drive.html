@@ -1,0 +1,166 @@
+<div class="dashboard-wrapper">
+  <!-- 1. HEADER SECTION -->
+  <app-dashboard-header (upload)="onUploadTrigger()"></app-dashboard-header>
+
+  <!-- 2. WORKSPACE CONTAINER -->
+  <div class="workspace-container">
+    <app-side-panel
+      [usedStorage]="usedStorage()"
+      [totalStorage]="totalStorage()"
+      [activeNav]="currentNav()"
+      (navChange)="switchNav($event)"
+    ></app-side-panel>
+
+    <!-- MAIN CANVAS -->
+    <main class="main-canvas">
+      <!-- Suggested Section -->
+      <section class="content-section">
+        <header class="section-header">
+          <h2>Suggested</h2>
+          <p>Based on your recent activity.</p>
+        </header>
+
+        <div class="cards-grid">
+          @for (item of suggestedItems(); track item.id) {
+          <div class="drive-card">
+            <div class="card-header">
+              <span class="card-title">{{ item.name }}</span>
+              <button mat-icon-button class="action-btn">
+                <mat-icon>more_vert</mat-icon>
+              </button>
+            </div>
+
+            <div class="card-preview">
+              @if (item.type === 'image' && item.previewUrl) {
+              <img [src]="item.previewUrl" [alt]="item.name" />
+              <div class="hover-overlay">
+                <mat-icon>visibility</mat-icon>
+              </div>
+              } @else if (item.type === 'pdf') {
+              <div class="preview-placeholder">
+                <span class="label">PDF PREVIEW</span>
+                <span class="sub-label">Document</span>
+              </div>
+              }
+            </div>
+
+            <div class="card-footer">
+              <div class="meta-info">
+                <span>{{ item.updated }}</span>
+                <span>{{ item.size }}</span>
+              </div>
+              <mat-icon class="type-icon pdf-color">
+                {{ item.type === 'image' ? 'image' : 'picture_as_pdf' }}
+              </mat-icon>
+            </div>
+          </div>
+          }
+        </div>
+      </section>
+
+      <!-- Favorites Section -->
+      <section class="content-section">
+        <header class="section-header">
+          <h2>Favorites</h2>
+          <p>Your most important assets.</p>
+        </header>
+
+        <div class="cards-grid">
+          @for (item of favoriteItems(); track item.id) {
+          <div class="drive-card">
+            <div class="card-header">
+              <span class="card-title">{{ item.name }}</span>
+              <button mat-icon-button class="action-btn">
+                <mat-icon>more_vert</mat-icon>
+              </button>
+            </div>
+
+            <div class="card-preview">
+              @if (item.type === 'video' && item.previewUrl) {
+              <img [src]="item.previewUrl" [alt]="item.name" />
+              <div class="play-overlay">
+                <div class="play-circle">
+                  <mat-icon>play_arrow</mat-icon>
+                </div>
+              </div>
+              }
+            </div>
+
+            <div class="card-footer">
+              <div class="meta-info">
+                <span>{{ item.updated }}</span>
+                <span>{{ item.size }}</span>
+              </div>
+              <mat-icon class="type-icon">movie</mat-icon>
+            </div>
+          </div>
+          }
+        </div>
+      </section>
+
+      <!-- My Files Section -->
+      <section class="content-section">
+        <header class="section-header">
+          <h2>My Files</h2>
+          <p>Folders and individual items.</p>
+        </header>
+
+        <div class="cards-grid">
+          @for (item of myFiles(); track item.id) {
+          <div class="drive-card">
+            <div class="card-header">
+              <span class="card-title">{{ item.name }}</span>
+              <button mat-icon-button class="action-btn">
+                <mat-icon>more_vert</mat-icon>
+              </button>
+            </div>
+
+            <div class="card-preview" [class.doc-border]="item.type === 'doc'">
+              @if (item.type === 'folder') {
+              <mat-icon class="large-icon">folder</mat-icon>
+              } @else if (item.type === 'zip') {
+              <mat-icon class="large-icon">inventory_2</mat-icon>
+              } @else if (item.type === 'doc') {
+              <div class="doc-skeleton">
+                <div class="line l1"></div>
+                <div class="line l2"></div>
+                <div class="line l3"></div>
+              </div>
+              }
+            </div>
+
+            <div class="card-footer">
+              <div class="meta-info">
+                <span>{{ item.updated }}</span>
+                <span
+                  >{{ item.type === 'folder' ? item.itemsCount + ' items' :
+                  item.size }}</span
+                >
+              </div>
+              <mat-icon
+                class="type-icon"
+                [class.folder-color]="item.type === 'folder'"
+              >
+                @switch (item.type) { @case ('folder') { folder } @case ('zip')
+                { folder_zip } @default { description } }
+              </mat-icon>
+            </div>
+          </div>
+          }
+
+          <!-- Empty Upload Dropzone Tile -->
+          <div class="dropzone-card" (click)="onUploadTrigger()">
+            <div class="plus-circle">
+              <mat-icon>add</mat-icon>
+            </div>
+            <p class="primary-text">Drop files here</p>
+            <p class="secondary-text">or click to browse</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 3. MOBILE BOTTOM NAVIGATION -->
+  <app-mobile-bottom-nav (upload)="onUploadTrigger()"></app-mobile-bottom-nav>
+</div>

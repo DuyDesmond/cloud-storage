@@ -1,0 +1,36 @@
+<header class="dashboard-header">
+  <a routerLink="/drive" class="logo-area">
+    <img src="/icon_nephos_logo.png" alt="Nephos Logo" class="brand-logo-img" />
+    <span class="brand-name">Nephos</span>
+  </a>
+
+  <div class="search-container">
+    <mat-icon class="search-icon">search</mat-icon>
+    <input
+      type="text"
+      [placeholder]="searchPlaceholder()"
+      (input)="onSearchChange($event)"
+    />
+  </div>
+
+  <div class="header-actions">
+    <button
+      mat-flat-button
+      color="primary"
+      class="upload-btn"
+      (click)="upload.emit()"
+    >
+      <mat-icon>cloud_upload</mat-icon>
+      <span class="hide-mobile">Upload</span>
+    </button>
+
+    <button
+      mat-icon-button
+      class="profile-avatar"
+      aria-label="User Profile"
+      routerLink="/profile"
+    >
+      <mat-icon>account_circle</mat-icon>
+    </button>
+  </div>
+</header>

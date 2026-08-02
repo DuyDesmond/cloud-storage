@@ -1,0 +1,41 @@
+<nav class="mobile-bottom-nav">
+  <button
+    class="nav-tab"
+    [class.active]="isActive('drive')"
+    (click)="navigateTo('drive')"
+  >
+    <mat-icon>home</mat-icon>
+    <span>HOME</span>
+  </button>
+
+  <button
+    class="nav-tab"
+    [class.active]="isActive('recent')"
+    (click)="navigateTo('drive')"
+  >
+    <mat-icon>schedule</mat-icon>
+    <span>RECENT</span>
+  </button>
+
+  <button class="fab-upload" (click)="onUploadTrigger()">
+    <mat-icon>add</mat-icon>
+  </button>
+
+  <button
+    class="nav-tab"
+    [class.active]="isActive('starred')"
+    (click)="navigateTo('drive')"
+  >
+    <mat-icon>star</mat-icon>
+    <span>STARRED</span>
+  </button>
+
+  <button
+    class="nav-tab"
+    [class.active]="isActive('trash')"
+    (click)="navigateTo('drive')"
+  >
+    <mat-icon>delete</mat-icon>
+    <span>TRASH</span>
+  </button>
+</nav>

@@ -1,0 +1,38 @@
+// Reusable Brand Identity Styles
+:root {
+  --brand-size: 40px; /* single control for logo height */
+  --brand-name-ratio: 0.65; /* brand name size = brand-size * ratio */
+  --brand-name-min: 18px;
+  --brand-name-max: 36px;
+}
+
+@mixin nephos-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  text-decoration: none !important;
+
+  .brand-logo-img {
+    height: var(--brand-size, 40px);
+    width: auto; // Keeps aspect ratio intact
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
+  .brand-name {
+    font-size: clamp(
+      var(--brand-name-min, 18px),
+      calc(var(--brand-size, 40px) * var(--brand-name-ratio, 0.65)),
+      var(--brand-name-max, 36px)
+    );
+    line-height: 1;
+    font-weight: 700;
+    color: #1e293b;
+    letter-spacing: -1px;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+    text-decoration: none !important;
+  }
+}

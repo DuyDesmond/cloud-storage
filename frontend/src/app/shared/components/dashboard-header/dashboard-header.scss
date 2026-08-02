@@ -1,0 +1,128 @@
+@use "../../styles/brand-logo" as brand;
+
+.dashboard-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(12px, 3vw, 32px);
+  background: rgba(248, 249, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(225, 232, 240, 0.8);
+
+  .logo-area {
+    @include brand.nephos-brand;
+    --brand-size: 36px;
+    flex-shrink: 0;
+  }
+
+  .search-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 400px;
+    min-width: 120px;
+    background-color: #eff4ff;
+    padding: 8px 16px;
+    border-radius: 999px;
+    transition: all 0.2s ease;
+
+    &:focus-within {
+      background-color: #ffffff;
+      box-shadow: 0 4px 12px rgba(0, 88, 188, 0.08);
+    }
+
+    .search-icon {
+      color: #717786;
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+    }
+
+    input {
+      border: none;
+      background: transparent;
+      width: 100%;
+      outline: none;
+      font-size: 14px;
+      color: #0b1c30;
+    }
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .upload-btn {
+      background-color: #0058bc !important;
+      color: #ffffff !important;
+      border-radius: 999px;
+      padding: 0 20px;
+
+      mat-icon {
+        margin-right: 6px;
+      }
+    }
+
+    .profile-avatar {
+      color: #0058bc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      mat-icon {
+        font-size: 32px;
+        width: 32px;
+        height: 32px;
+      }
+    }
+  }
+
+  // Tablet & Mobile Adjustments (< 768px)
+  @media (max-width: 768px) {
+    .search-container {
+      padding: 6px 12px;
+    }
+
+    .header-actions {
+      .upload-btn {
+        padding: 0 12px;
+        min-width: 40px;
+
+        mat-icon {
+          margin-right: 0;
+        }
+
+        .upload-label {
+          display: none; // Hide text label on smaller viewports
+        }
+
+        .hide-label {
+          display: none; // Hide button on smaller viewports
+        }
+      }
+    }
+  }
+
+  // Mobile Small (< 480px)
+  @media (max-width: 480px) {
+    .logo-area {
+      .brand-name {
+        display: none; // Show only icon logo on extra small screens
+      }
+    }
+
+    .header-actions {
+      .upload-btn {
+        display: none !important; // Completely hides upload button on small screens
+      }
+    }
+  }
+}

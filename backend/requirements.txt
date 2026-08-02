@@ -1,0 +1,12 @@
+pytest
+pytest-env
+email-validator
+pydantic[email]
+fastapi
+uvicorn
+httpx2
+httpx
+asyncpg
+PyJWT
+passlib
+pydantic-settings

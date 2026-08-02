@@ -1,0 +1,69 @@
+name: CI - Test & Validate Skeleton
+on:
+  push:
+    branches: [dev-duy]
+  pull_request:
+    branches: [dev-duy]
+
+jobs:
+  # --- FRONTEND (Angular) TESTING ---
+  frontend-test:
+    name: Angular Frontend Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: |
+          echo "Installing Angular dependencies..."
+          npm ci
+
+      - name: Run unit test
+        run: |
+          echo "Running Angular Unit Tests..."
+          npm test
+
+      - name: Run build
+        run: |
+          echo "Building Angular project..."
+          npm run build
+
+  # --- BACKEND (FastAPI) TESTING ---
+  backend-test:
+    name: FastAPI Backend Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          echo "Installing Python dependencies..."
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          echo "Running pytest for FastAPI..."
+          python -m pytest -v
