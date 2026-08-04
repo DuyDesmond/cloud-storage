@@ -16,7 +16,6 @@ async def init_db_pool() -> None:
             max_size=10,
             timeout=30.0,
             command_timeout=60.0,
-            server_settings={"search_path": "nephos"},  # Set the schema search path
         )
         print(" Neon PostgreSQL connection pool initialized.")
     except Exception as e:

@@ -25,7 +25,7 @@ export class AuthService {
   login(email: string, password: string): Observable<User> {
     return this.http
       .post<User>(
-        `AUTH_ENDPOINTS.login`,
+        `${AUTH_ENDPOINTS.login}`,
         { email, password },
         { withCredentials: true },
       )
@@ -39,7 +39,7 @@ export class AuthService {
   ): Observable<User> {
     return this.http
       .post<User>(
-        `AUTH_ENDPOINTS.register`,
+        `${AUTH_ENDPOINTS.register}`,
         { email, password, full_name: username },
         { withCredentials: true },
       )
@@ -48,7 +48,7 @@ export class AuthService {
 
   getProfile(): Observable<User> {
     return this.http
-      .get<User>(`AUTH_ENDPOINTS.profile`, { withCredentials: true })
+      .get<User>(`${AUTH_ENDPOINTS.profile}`, { withCredentials: true })
       .pipe(
         tap((user) => this.currentUser.set(user)),
         catchError((err) => {
@@ -60,14 +60,14 @@ export class AuthService {
 
   refresh(): Observable<User> {
     return this.http
-      .post<User>(`AUTH_ENDPOINTS.refresh`, {}, { withCredentials: true })
+      .post<User>(`${AUTH_ENDPOINTS.refresh}`, {}, { withCredentials: true })
       .pipe(tap((user) => this.currentUser.set(user)));
   }
 
   logout(): Observable<{ message: string }> {
     return this.http
       .post<{ message: string }>(
-        `AUTH_ENDPOINTS.logout`,
+        `${AUTH_ENDPOINTS.logout}`,
         {},
         { withCredentials: true },
       )
@@ -76,7 +76,7 @@ export class AuthService {
 
   deleteAccount(): Observable<{ message: string }> {
     return this.http
-      .delete<{ message: string }>(`AUTH_ENDPOINTS.delete`, {
+      .delete<{ message: string }>(`${AUTH_ENDPOINTS.delete}`, {
         withCredentials: true,
       })
       .pipe(tap(() => this.currentUser.set(null)));
@@ -87,7 +87,7 @@ export class AuthService {
     newPassword: string,
   ): Observable<{ message: string }> {
     return this.http.put<{ message: string }>(
-      `AUTH_ENDPOINTS.change-password`,
+      `${AUTH_ENDPOINTS.changePassword}`,
       { current_password: current, new_password: newPassword },
       { withCredentials: true },
     );
@@ -95,7 +95,7 @@ export class AuthService {
 
   forgotPassword(email: string): Observable<{ message: string }> {
     return this.http.post<{ message: string }>(
-      `AUTH_ENDPOINTS.forgot-password`,
+      `${AUTH_ENDPOINTS.forgotPassword}`,
       { email },
     );
   }
@@ -105,7 +105,7 @@ export class AuthService {
     newPassword: string,
   ): Observable<{ message: string }> {
     return this.http.post<{ message: string }>(
-      `AUTH_ENDPOINTS.reset-password`,
+      `${AUTH_ENDPOINTS.resetPassword}`,
       { token, new_password: newPassword },
     );
   }
