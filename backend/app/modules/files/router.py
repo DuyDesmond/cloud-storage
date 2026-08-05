@@ -4,6 +4,7 @@ import uuid
 
 import asyncpg
 from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status, Request
 
 from app.core.database import get_db_connection
 from app.modules.auth.dependencies import get_current_user
@@ -33,6 +34,18 @@ async def upload_file(
     service: FileOperationsService = Depends(FileOperationsService),
 ):
     return await service.upload_file(conn, current_user, parent_folder_id, upload_file)
+
+
+@router.get("/files/{file_id}/download")
+async def download_file(
+    file_id: uuid.UUID,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    range_header = request.headers.get("range") or request.headers.get("Range")
+    return await service.download_file_stream(conn, current_user, file_id, range_header)
 
 
 @router.patch("/folders/{folder_id}/move", response_model=schemas.FolderResponse)
@@ -95,3 +108,52 @@ async def revoke_share(
     service: FileOperationsService = Depends(FileOperationsService),
 ):
     return await service.revoke_share(conn, current_user, share_id)
+
+
+@router.delete("/trash/files/{file_id}", response_model=schemas.MessageResponse)
+async def hard_delete_file(
+    file_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.hard_delete_file(conn, current_user, file_id)
+
+
+@router.delete("/trash/folders/{folder_id}", response_model=schemas.MessageResponse)
+async def hard_delete_folder(
+    folder_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.hard_delete_folder(conn, current_user, folder_id)
+
+
+@router.delete("/trash/empty", response_model=schemas.MessageResponse)
+async def empty_trash(
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.hard_delete_all_trash(conn, current_user)
+
+
+@router.post("/trash/files/{file_id}/restore", response_model=schemas.FileResponse)
+async def restore_file(
+    file_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.restore_file(conn, current_user, file_id)
+
+
+@router.post("/trash/folders/{folder_id}/restore", response_model=schemas.FolderResponse)
+async def restore_folder(
+    folder_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.restore_folder(conn, current_user, folder_id)
