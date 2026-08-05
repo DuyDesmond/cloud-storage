@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, File, UploadFile, status
 
 from app.core.database import get_db_connection
 from app.modules.auth.dependencies import get_current_user
-from app.modules.file_operations import schemas
-from app.modules.file_operations.service import FileOperationsService
+from app.modules.files import schemas
+from app.modules.files.service import FileOperationsService
 
 
 router = APIRouter(prefix="/storage", tags=["File Operations"])

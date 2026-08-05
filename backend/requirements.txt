@@ -12,3 +12,4 @@ passlib
 pydantic-settings
 minio
 python-multipart
+boto3

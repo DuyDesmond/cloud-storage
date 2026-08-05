@@ -30,7 +30,6 @@ class ShareCreateRequest(BaseModel):
     grantee_id: uuid.UUID | None = None
     share_token: str | None = None
     password: str | None = None
-    expires_at: datetime | None = None
     permission: PermissionLevel = "view"
 
 

@@ -5,7 +5,7 @@ import asyncpg
 import uuid
 from typing import Any, Optional
 
-from app.modules.file_operations import queries
+from app.modules.files import queries
 
 
 class FileOperationsRepository:
@@ -100,27 +100,17 @@ class FileOperationsRepository:
         grantee_id: uuid.UUID | None,
         share_token: str | None,
         password_hash: str | None,
-        expires_at: datetime | None,
         permission: str,
         created_by: uuid.UUID | None,
     ) -> dict[str, Any]:
         row = await conn.fetchrow(
-            """
-            INSERT INTO nephos.acl_entries (
-                file_id, folder_id, principal_type, grantee_id, share_token,
-                password_hash, expires_at, permission, created_by
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING id, file_id, folder_id, principal_type, grantee_id, share_token, permission,
-                      revoked_at, created_by, created_at, updated_at
-            """,
+            queries.CREATE_ACL_ENTRY,
             file_id,
             folder_id,
             principal_type,
             grantee_id,
             share_token,
             password_hash,
-            expires_at,
             permission,
             created_by,
         )
@@ -135,13 +125,7 @@ class FileOperationsRepository:
         permission: str,
     ) -> Optional[dict[str, Any]]:
         row = await conn.fetchrow(
-            """
-            UPDATE nephos.acl_entries
-            SET permission = $2
-            WHERE id = $1 AND revoked_at IS NULL
-            RETURNING id, file_id, folder_id, principal_type, grantee_id, share_token, permission,
-                      revoked_at, created_by, created_at, updated_at
-            """,
+            queries.UPDATE_ACL_ENTRY_PERMISSION,
             acl_entry_id,
             permission,
         )
@@ -154,24 +138,13 @@ class FileOperationsRepository:
         *,
         share_token: str,
         password_hash: str | None,
-        expires_at: datetime | None,
         permission: str,
     ) -> Optional[dict[str, Any]]:
         row = await conn.fetchrow(
-            """
-            UPDATE nephos.acl_entries
-            SET share_token = $2,
-                password_hash = $3,
-                expires_at = $4,
-                permission = $5
-            WHERE id = $1 AND revoked_at IS NULL
-            RETURNING id, file_id, folder_id, principal_type, grantee_id, share_token, permission,
-                      revoked_at, created_by, created_at, updated_at
-            """,
+            queries.UPDATE_LIVE_PUBLIC_LINK,
             acl_entry_id,
             share_token,
             password_hash,
-            expires_at,
             permission,
         )
         return self._row_to_dict(row)
@@ -182,13 +155,7 @@ class FileOperationsRepository:
         acl_entry_id: uuid.UUID,
     ) -> Optional[dict[str, Any]]:
         row = await conn.fetchrow(
-            """
-            UPDATE nephos.acl_entries
-            SET revoked_at = COALESCE(revoked_at, NOW())
-            WHERE id = $1
-            RETURNING id, file_id, folder_id, principal_type, grantee_id, share_token, permission,
-                      revoked_at, created_by, created_at, updated_at
-            """,
+            queries.REVOKE_ACL_ENTRY,
             acl_entry_id,
         )
         return self._row_to_dict(row)
@@ -202,16 +169,7 @@ class FileOperationsRepository:
         grantee_id: uuid.UUID,
     ) -> Optional[dict[str, Any]]:
         row = await conn.fetchrow(
-            """
-            SELECT id, file_id, folder_id, principal_type, grantee_id, share_token, permission,
-                   revoked_at, created_by, created_at, updated_at
-            FROM nephos.acl_entries
-            WHERE principal_type = 'user'
-              AND revoked_at IS NULL
-              AND grantee_id = $3
-              AND file_id IS NOT DISTINCT FROM $1
-              AND folder_id IS NOT DISTINCT FROM $2
-            """,
+            queries.GET_LIVE_USER_SHARE,
             file_id,
             folder_id,
             grantee_id,
@@ -226,15 +184,7 @@ class FileOperationsRepository:
         folder_id: uuid.UUID | None,
     ) -> Optional[dict[str, Any]]:
         row = await conn.fetchrow(
-            """
-            SELECT id, file_id, folder_id, principal_type, grantee_id, share_token, permission,
-                   revoked_at, created_by, created_at, updated_at
-            FROM nephos.acl_entries
-            WHERE principal_type = 'public_link'
-              AND revoked_at IS NULL
-              AND file_id IS NOT DISTINCT FROM $1
-              AND folder_id IS NOT DISTINCT FROM $2
-            """,
+            queries.GET_LIVE_PUBLIC_LINK,
             file_id,
             folder_id,
         )

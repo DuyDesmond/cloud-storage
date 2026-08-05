@@ -9,56 +9,41 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 import asyncpg
+import boto3
+from botocore.exceptions import ClientError
 from fastapi import Depends, HTTPException, UploadFile, status
-
-try:
-    from minio import Minio
-except ImportError:  # pragma: no cover - optional runtime dependency
-    Minio = None
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.modules.file_operations import schemas
-from app.modules.file_operations.repository import FileOperationsRepository
+from app.modules.files import schemas
+from app.modules.files.repository import FileOperationsRepository
 
 
-class MinioStorageGateway:
+class R2StorageGateway:
     def __init__(self) -> None:
-        self.endpoint = getattr(settings, "MINIO_ENDPOINT", None)
-        self.access_key = getattr(settings, "MINIO_ACCESS_KEY", None)
-        self.secret_key = getattr(settings, "MINIO_SECRET_KEY", None)
-        self.secure = bool(getattr(settings, "MINIO_SECURE", False))
-        self.bucket_name = getattr(settings, "MINIO_BUCKET_NAME", "nephos")
-        self._client: Minio | None = None
+        self.endpoint_url = getattr(settings, "R2_ENDPOINT_URL", None)
+        self.access_key = getattr(settings, "R2_ACCESS_KEY_ID", None)
+        self.secret_key = getattr(settings, "R2_SECRET_ACCESS_KEY", None)
+        self.bucket_name = getattr(settings, "R2_BUCKET_NAME", None)
+        self._client: Any | None = None
 
-    def _get_client(self) -> Minio:
-        if Minio is None:
+    def _get_client(self) -> Any:
+        if not self.endpoint_url or not self.access_key or not self.secret_key:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="MinIO client is not installed.",
-            )
-
-        if not self.endpoint or not self.access_key or not self.secret_key:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="MinIO is not configured.",
+                detail="Cloudflare R2 storage is not configured.",
             )
 
         if self._client is None:
-            self._client = Minio(
-                self.endpoint,
-                access_key=self.access_key,
-                secret_key=self.secret_key,
-                secure=self.secure,
+            self._client = boto3.client(
+                service_name="s3",
+                endpoint_url=self.endpoint_url,
+                aws_access_key_id=self.access_key,
+                aws_secret_access_key=self.secret_key,
+                region_name="auto",
             )
 
         return self._client
-
-    async def ensure_bucket(self) -> None:
-        client = self._get_client()
-        exists = await asyncio.to_thread(client.bucket_exists, self.bucket_name)
-        if not exists:
-            await asyncio.to_thread(client.make_bucket, self.bucket_name)
 
     async def upload_bytes(
         self,
@@ -67,30 +52,48 @@ class MinioStorageGateway:
         data: bytes,
         content_type: str | None,
     ) -> None:
-        await self.ensure_bucket()
         client = self._get_client()
         stream = io.BytesIO(data)
-        await asyncio.to_thread(
-            client.put_object,
-            self.bucket_name,
-            object_name,
-            stream,
-            len(data),
-            content_type,
-        )
+        
+        extra_args: dict[str, str] = {}
+        if content_type:
+            extra_args["ContentType"] = content_type
+
+        try:
+            await asyncio.to_thread(
+                client.upload_fileobj,
+                Fileobj=stream,
+                Bucket=self.bucket_name,
+                Key=object_name,
+                ExtraArgs=extra_args if extra_args else None,
+            )
+        except ClientError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to upload file to Cloudflare R2.",
+            ) from exc
 
     async def delete_object(self, object_name: str) -> None:
-        if Minio is None or not self.endpoint or not self.access_key or not self.secret_key:
+        if not self.endpoint_url or not self.access_key or not self.secret_key:
             return
+        
         client = self._get_client()
-        await asyncio.to_thread(client.remove_object, self.bucket_name, object_name)
+        try:
+            await asyncio.to_thread(
+                client.delete_object,
+                Bucket=self.bucket_name,
+                Key=object_name,
+            )
+        except ClientError:
+            # Silence deletion exceptions to avoid masking primary application errors
+            pass
 
 
 class FileOperationsService:
     def __init__(
         self,
         repo: FileOperationsRepository = Depends(),
-        storage: MinioStorageGateway = Depends(),
+        storage: R2StorageGateway = Depends(),
     ) -> None:
         self.repo = repo
         self.storage = storage
@@ -364,7 +367,6 @@ class FileOperationsService:
                 grantee_id=payload.grantee_id,
                 share_token=None,
                 password_hash=None,
-                expires_at=None,
                 permission=payload.permission,
                 created_by=current_user["id"],
             )
@@ -379,7 +381,6 @@ class FileOperationsService:
                 existing_link["id"],
                 share_token=share_token if payload.share_token else existing_link["share_token"],
                 password_hash=password_hash,
-                expires_at=payload.expires_at,
                 permission=payload.permission,
             )
             return self._as_share_response(updated)
@@ -392,7 +393,6 @@ class FileOperationsService:
             grantee_id=None,
             share_token=share_token,
             password_hash=password_hash,
-            expires_at=payload.expires_at,
             permission=payload.permission,
             created_by=current_user["id"],
         )
