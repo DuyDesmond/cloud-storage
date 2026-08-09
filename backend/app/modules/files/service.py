@@ -104,6 +104,7 @@ class R2StorageGateway:
         object_name: str,
         expires_in: int = 3600,
         content_type: str | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> str:
         """Generate a presigned URL for PUT uploads (client performs HTTP PUT).
 
@@ -114,6 +115,8 @@ class R2StorageGateway:
         params: dict[str, object] = {"Bucket": self.bucket_name, "Key": object_name}
         if content_type:
             params["ContentType"] = content_type
+        if metadata:
+            params["Metadata"] = metadata
 
         try:
             url = await asyncio.to_thread(
@@ -325,15 +328,23 @@ class FileOperationsService:
         storage_key = f"storage/{current_user['id']}/{uuid.uuid4()}/{clean_name}"
 
         expires_in = 600
+        presign_metadata: dict[str, str] | None = None
+        headers: dict[str, str] = {}
+        if payload.mime_type:
+            headers["Content-Type"] = payload.mime_type
+        if payload.content_hash:
+            # include a metadata key for the client's checksum so the object store
+            # will have it available for later verification
+            presign_metadata = {"sha256": payload.content_hash}
+            # browsers send metadata as `x-amz-meta-<key>`; instruct client to include it
+            headers["x-amz-meta-sha256"] = payload.content_hash
+
         url = await self.storage.generate_presigned_put_url(
             object_name=storage_key,
             expires_in=expires_in,
             content_type=payload.mime_type,
+            metadata=presign_metadata,
         )
-
-        headers: dict[str, str] = {}
-        if payload.mime_type:
-            headers["Content-Type"] = payload.mime_type
 
         return schemas.PresignedUploadResponse(
             presigned_url=url,
@@ -363,6 +374,21 @@ class FileOperationsService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Uploaded storage object not found.",
             )
+
+        # If client supplied a checksum, validate against object metadata or ETag
+        if payload.content_hash:
+            metadata = (head.get("Metadata") or {})
+            head_etag = head.get("ETag") or head.get("ETag")
+            normalized_etag = head_etag.strip('"') if head_etag else None
+            if metadata.get("sha256"):
+                if metadata.get("sha256") != payload.content_hash:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Checksum mismatch for uploaded object.")
+            elif normalized_etag:
+                if normalized_etag != payload.content_hash:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Checksum mismatch for uploaded object.")
+            else:
+                # No checksum available from storage to validate against
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to validate checksum for uploaded object.")
 
         clean_name = sanitize_filename(payload.file_name)
 
@@ -447,10 +473,12 @@ class FileOperationsService:
                 detail="Invalid storage key for current user.",
             )
 
-        parts_formatted = [
-            {"PartNumber": p.part_number, "ETag": p.etag}
-            for p in payload.parts
-        ]
+        parts_formatted = []
+        for p in payload.parts:
+            etag = p.etag
+            if etag:
+                etag = etag.strip('"').strip("'")
+            parts_formatted.append({"PartNumber": p.part_number, "ETag": etag})
 
         await self.storage.complete_multipart_upload(
             object_name=payload.storage_key,
@@ -637,7 +665,8 @@ class FileOperationsService:
                 return getattr(self._f, "tell")()
 
         file_id = uuid.uuid4()
-        storage_key = f"{current_user['id']}/{file_id}"
+        clean_name = sanitize_filename(upload_file.filename or "untitled")
+        storage_key = f"storage/{current_user['id']}/{file_id}/{clean_name}"
         reader = _HashingReader(file_obj)
 
         extra_args: dict[str, str] = {}
