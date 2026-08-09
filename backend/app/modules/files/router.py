@@ -36,6 +36,65 @@ async def upload_file(
     return await service.upload_file(conn, current_user, parent_folder_id, upload_file)
 
 
+@router.post("/upload/presign", response_model=schemas.PresignedUploadResponse)
+async def request_presigned_upload(
+    payload: schemas.PresignedUploadRequest,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.request_presigned_upload(conn, current_user, payload)
+
+
+@router.post("/upload/complete", response_model=schemas.FileResponse, status_code=status.HTTP_201_CREATED)
+async def complete_direct_upload(
+    payload: schemas.CompleteUploadRequest,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.complete_direct_upload(conn, current_user, payload)
+
+
+@router.post("/upload/multipart/initiate", response_model=schemas.InitiateMultipartUploadResponse)
+async def initiate_multipart_upload(
+    payload: schemas.InitiateMultipartUploadRequest,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.initiate_multipart_upload(conn, current_user, payload)
+
+
+@router.post("/upload/multipart/presign-part", response_model=schemas.PresignPartResponse)
+async def presign_multipart_part(
+    payload: schemas.PresignPartRequest,
+    current_user: dict = Depends(get_current_user),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.presign_multipart_part(current_user, payload)
+
+
+@router.post("/upload/multipart/complete", response_model=schemas.FileResponse, status_code=status.HTTP_201_CREATED)
+async def complete_multipart_upload(
+    payload: schemas.CompleteMultipartUploadRequest,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.complete_multipart_upload(conn, current_user, payload)
+
+
+@router.post("/upload/multipart/abort", response_model=schemas.MessageResponse)
+async def abort_multipart_upload(
+    payload: schemas.AbortMultipartUploadRequest,
+    current_user: dict = Depends(get_current_user),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.abort_multipart_upload(current_user, payload)
+
+
+
 @router.get("/files/{file_id}/download")
 async def download_file(
     file_id: uuid.UUID,

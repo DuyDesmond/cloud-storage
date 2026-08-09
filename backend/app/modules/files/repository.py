@@ -255,6 +255,9 @@ class FileOperationsRepository:
     async def resolve_restored_file_name(self, conn: asyncpg.Connection, parent_folder_id: uuid.UUID | None, owner_id: uuid.UUID, file_name: str) -> str:
         return await conn.fetchval(queries.RESOLVE_RESTORED_FILE_NAME, parent_folder_id, owner_id, file_name)
 
+    async def resolve_file_name_collision(self, conn: asyncpg.Connection, parent_folder_id: uuid.UUID | None, owner_id: uuid.UUID, file_name: str) -> str:
+        return await conn.fetchval(queries.RESOLVE_FILE_NAME_COLLISION, parent_folder_id, owner_id, file_name)
+
     async def resolve_restored_folder_name(self, conn: asyncpg.Connection, parent_folder_id: uuid.UUID | None, owner_id: uuid.UUID, folder_name: str) -> str:
         return await conn.fetchval(queries.RESOLVE_RESTORED_FOLDER_NAME, parent_folder_id, owner_id, folder_name)
 

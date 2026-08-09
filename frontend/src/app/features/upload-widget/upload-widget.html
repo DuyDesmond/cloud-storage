@@ -1,0 +1,110 @@
+@if (uploadQueueService.queue().length > 0) {
+<div class="upload-widget-card" [class.collapsed]="!isExpanded()">
+  <!-- Widget Header -->
+  <div class="widget-header" (click)="toggleExpand()">
+    <div class="header-left">
+      <mat-icon class="upload-icon">cloud_upload</mat-icon>
+      <div class="header-title">
+        @if (uploadQueueService.hasActiveOrQueued()) {
+          <span>Uploading {{ uploadQueueService.queue().length }} item(s)</span>
+        } @else {
+          <span>Uploads Complete</span>
+        }
+      </div>
+    </div>
+
+    <div class="header-actions" (click)="$event.stopPropagation()">
+      @if (uploadQueueService.hasActiveOrQueued()) {
+        <button mat-icon-button matTooltip="Pause All" (click)="pauseAll()">
+          <mat-icon>pause</mat-icon>
+        </button>
+      } @else {
+        <button mat-icon-button matTooltip="Resume All" (click)="resumeAll()">
+          <mat-icon>play_arrow</mat-icon>
+        </button>
+      }
+      <button mat-icon-button matTooltip="Clear Completed" (click)="clearCompleted()">
+        <mat-icon>cleaning_services</mat-icon>
+      </button>
+      <button mat-icon-button (click)="toggleExpand()">
+        <mat-icon>{{ isExpanded() ? 'expand_more' : 'expand_less' }}</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  <!-- Overall Progress Bar -->
+  <mat-progress-bar
+    mode="determinate"
+    [value]="uploadQueueService.totalProgressPercentage()"
+    class="overall-progress"
+  ></mat-progress-bar>
+
+  @if (isExpanded()) {
+    <!-- Expanded Body List -->
+    <div class="widget-body">
+      @for (item of uploadQueueService.queue(); track item.id) {
+        <div class="upload-item" [class.error]="item.status === 'error'">
+          <div class="item-icon">
+            @switch (item.status) {
+              @case ('completed') {
+                <mat-icon class="status-success">check_circle</mat-icon>
+              }
+              @case ('error') {
+                <mat-icon class="status-error">error</mat-icon>
+              }
+              @case ('paused') {
+                <mat-icon class="status-paused">pause_circle</mat-icon>
+              }
+              @default {
+                <mat-icon class="status-uploading">insert_drive_file</mat-icon>
+              }
+            }
+          </div>
+
+          <div class="item-details">
+            <div class="item-row">
+              <span class="file-name" [title]="item.name">{{ item.name }}</span>
+              <span class="file-size">{{ formatSize(item.sizeBytes) }}</span>
+            </div>
+
+            @if (item.status === 'uploading') {
+              <mat-progress-bar
+                mode="determinate"
+                [value]="item.progressPercentage"
+                class="item-progress"
+              ></mat-progress-bar>
+              <div class="item-meta">
+                <span>{{ item.progressPercentage }}% &bull; {{ formatSpeed(item.speedBytesPerSec) }}</span>
+                <span>{{ formatEta(item.etaSeconds) }}</span>
+              </div>
+            } @else if (item.status === 'queued') {
+              <div class="item-meta text-muted">Queued...</div>
+            } @else if (item.status === 'paused') {
+              <div class="item-meta text-paused">Paused &bull; {{ item.progressPercentage }}%</div>
+            } @else if (item.status === 'completed') {
+              <div class="item-meta text-success">Complete</div>
+            } @else if (item.status === 'error') {
+              <div class="item-meta text-error">{{ item.errorMessage || 'Failed' }}</div>
+            }
+          </div>
+
+          <div class="item-actions">
+            @if (item.status === 'uploading') {
+              <button mat-icon-button matTooltip="Pause" (click)="pauseUpload(item.id, $event)">
+                <mat-icon>pause</mat-icon>
+              </button>
+            } @else if (item.status === 'paused' || item.status === 'error') {
+              <button mat-icon-button matTooltip="Resume" (click)="resumeUpload(item.id, $event)">
+                <mat-icon>play_arrow</mat-icon>
+              </button>
+            }
+            <button mat-icon-button matTooltip="Cancel" (click)="cancelUpload(item.id, $event)">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
+}

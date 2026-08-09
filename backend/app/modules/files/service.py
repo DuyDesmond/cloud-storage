@@ -189,6 +189,121 @@ class R2StorageGateway:
                 detail="Failed to generate presigned POST.",
             ) from exc
 
+    async def head_object(self, object_name: str) -> dict[str, Any] | None:
+        client = self._get_client()
+        try:
+            res = await asyncio.to_thread(
+                client.head_object,
+                Bucket=self.bucket_name,
+                Key=object_name,
+            )
+            return res
+        except ClientError as exc:
+            error_code = str(exc.response.get("Error", {}).get("Code", ""))
+            if error_code in ("404", "NoSuchKey", "NotFound"):
+                return None
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to verify storage object.",
+            ) from exc
+
+    async def create_multipart_upload(
+        self,
+        *,
+        object_name: str,
+        content_type: str | None = None,
+    ) -> str:
+        client = self._get_client()
+        kwargs: dict[str, Any] = {"Bucket": self.bucket_name, "Key": object_name}
+        if content_type:
+            kwargs["ContentType"] = content_type
+        try:
+            res = await asyncio.to_thread(
+                client.create_multipart_upload,
+                **kwargs,
+            )
+            return res["UploadId"]
+        except ClientError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to initiate multipart upload in storage.",
+            ) from exc
+
+    async def generate_presigned_part_url(
+        self,
+        *,
+        object_name: str,
+        upload_id: str,
+        part_number: int,
+        expires_in: int = 600,
+    ) -> str:
+        client = self._get_client()
+        params = {
+            "Bucket": self.bucket_name,
+            "Key": object_name,
+            "UploadId": upload_id,
+            "PartNumber": part_number,
+        }
+        try:
+            url = await asyncio.to_thread(
+                client.generate_presigned_url,
+                ClientMethod="upload_part",
+                Params=params,
+                ExpiresIn=expires_in,
+            )
+            return url
+        except ClientError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to generate presigned URL for upload part.",
+            ) from exc
+
+    async def complete_multipart_upload(
+        self,
+        *,
+        object_name: str,
+        upload_id: str,
+        parts: list[dict[str, Any]],
+    ) -> None:
+        client = self._get_client()
+        try:
+            await asyncio.to_thread(
+                client.complete_multipart_upload,
+                Bucket=self.bucket_name,
+                Key=object_name,
+                UploadId=upload_id,
+                MultipartUpload={"Parts": parts},
+            )
+        except ClientError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to complete multipart upload in storage.",
+            ) from exc
+
+    async def abort_multipart_upload(
+        self,
+        *,
+        object_name: str,
+        upload_id: str,
+    ) -> None:
+        client = self._get_client()
+        try:
+            await asyncio.to_thread(
+                client.abort_multipart_upload,
+                Bucket=self.bucket_name,
+                Key=object_name,
+                UploadId=upload_id,
+            )
+        except ClientError:
+            pass
+
+
+
+def sanitize_filename(filename: str) -> str:
+    cleaned = filename.replace("\\", "/").split("/")[-1]
+    cleaned = "".join(c for c in cleaned if c.isprintable() and c not in '<>:"|?*')
+    return cleaned.strip() or "unnamed_file"
+
 
 class FileOperationsService:
     def __init__(
@@ -198,6 +313,193 @@ class FileOperationsService:
     ) -> None:
         self.repo = repo
         self.storage = storage
+
+    async def request_presigned_upload(
+        self,
+        conn: asyncpg.Connection,
+        current_user: dict[str, Any],
+        payload: schemas.PresignedUploadRequest,
+    ) -> schemas.PresignedUploadResponse:
+        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        clean_name = sanitize_filename(payload.file_name)
+        storage_key = f"storage/{current_user['id']}/{uuid.uuid4()}/{clean_name}"
+
+        expires_in = 600
+        url = await self.storage.generate_presigned_put_url(
+            object_name=storage_key,
+            expires_in=expires_in,
+            content_type=payload.mime_type,
+        )
+
+        headers: dict[str, str] = {}
+        if payload.mime_type:
+            headers["Content-Type"] = payload.mime_type
+
+        return schemas.PresignedUploadResponse(
+            presigned_url=url,
+            storage_key=storage_key,
+            expires_in=expires_in,
+            headers=headers,
+        )
+
+    async def complete_direct_upload(
+        self,
+        conn: asyncpg.Connection,
+        current_user: dict[str, Any],
+        payload: schemas.CompleteUploadRequest,
+    ) -> schemas.FileResponse:
+        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+
+        user_prefix = f"storage/{current_user['id']}/"
+        if not payload.storage_key.startswith(user_prefix):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid storage key for current user.",
+            )
+
+        head = await self.storage.head_object(payload.storage_key)
+        if head is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded storage object not found.",
+            )
+
+        clean_name = sanitize_filename(payload.file_name)
+
+        async def _do_create():
+            await self.repo.call_lock_naming_scope(conn, payload.parent_folder_id, current_user["id"])
+            final_name = await self.repo.resolve_file_name_collision(
+                conn, payload.parent_folder_id, current_user["id"], clean_name
+            )
+            file_id = uuid.uuid4()
+            row = await self.repo.create_file(
+                conn,
+                file_id=file_id,
+                owner_id=current_user["id"],
+                parent_folder_id=payload.parent_folder_id,
+                storage_key=payload.storage_key,
+                file_name=final_name,
+                size_bytes=payload.size_bytes,
+                mime_type=payload.mime_type,
+                content_hash=payload.content_hash,
+            )
+            return row
+
+        row = await self._with_db_retry(_do_create)
+        return self._as_file_response(row)
+
+    async def initiate_multipart_upload(
+        self,
+        conn: asyncpg.Connection,
+        current_user: dict[str, Any],
+        payload: schemas.InitiateMultipartUploadRequest,
+    ) -> schemas.InitiateMultipartUploadResponse:
+        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        clean_name = sanitize_filename(payload.file_name)
+        storage_key = f"storage/{current_user['id']}/{uuid.uuid4()}/{clean_name}"
+
+        upload_id = await self.storage.create_multipart_upload(
+            object_name=storage_key,
+            content_type=payload.mime_type,
+        )
+
+        return schemas.InitiateMultipartUploadResponse(
+            upload_id=upload_id,
+            storage_key=storage_key,
+            part_size=8 * 1024 * 1024,
+        )
+
+    async def presign_multipart_part(
+        self,
+        current_user: dict[str, Any],
+        payload: schemas.PresignPartRequest,
+    ) -> schemas.PresignPartResponse:
+        user_prefix = f"storage/{current_user['id']}/"
+        if not payload.storage_key.startswith(user_prefix):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid storage key for current user.",
+            )
+
+        url = await self.storage.generate_presigned_part_url(
+            object_name=payload.storage_key,
+            upload_id=payload.upload_id,
+            part_number=payload.part_number,
+            expires_in=600,
+        )
+
+        return schemas.PresignPartResponse(
+            presigned_url=url,
+            part_number=payload.part_number,
+        )
+
+    async def complete_multipart_upload(
+        self,
+        conn: asyncpg.Connection,
+        current_user: dict[str, Any],
+        payload: schemas.CompleteMultipartUploadRequest,
+    ) -> schemas.FileResponse:
+        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        user_prefix = f"storage/{current_user['id']}/"
+        if not payload.storage_key.startswith(user_prefix):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid storage key for current user.",
+            )
+
+        parts_formatted = [
+            {"PartNumber": p.part_number, "ETag": p.etag}
+            for p in payload.parts
+        ]
+
+        await self.storage.complete_multipart_upload(
+            object_name=payload.storage_key,
+            upload_id=payload.upload_id,
+            parts=parts_formatted,
+        )
+
+        clean_name = sanitize_filename(payload.file_name)
+
+        async def _do_create():
+            await self.repo.call_lock_naming_scope(conn, payload.parent_folder_id, current_user["id"])
+            final_name = await self.repo.resolve_file_name_collision(
+                conn, payload.parent_folder_id, current_user["id"], clean_name
+            )
+            file_id = uuid.uuid4()
+            row = await self.repo.create_file(
+                conn,
+                file_id=file_id,
+                owner_id=current_user["id"],
+                parent_folder_id=payload.parent_folder_id,
+                storage_key=payload.storage_key,
+                file_name=final_name,
+                size_bytes=payload.size_bytes,
+                mime_type=payload.mime_type,
+                content_hash=payload.content_hash,
+            )
+            return row
+
+        row = await self._with_db_retry(_do_create)
+        return self._as_file_response(row)
+
+    async def abort_multipart_upload(
+        self,
+        current_user: dict[str, Any],
+        payload: schemas.AbortMultipartUploadRequest,
+    ) -> schemas.MessageResponse:
+        user_prefix = f"storage/{current_user['id']}/"
+        if not payload.storage_key.startswith(user_prefix):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid storage key for current user.",
+            )
+
+        await self.storage.abort_multipart_upload(
+            object_name=payload.storage_key,
+            upload_id=payload.upload_id,
+        )
+
+        return schemas.MessageResponse(message="Multipart upload aborted successfully.")
 
     async def _with_db_retry(self, fn, max_attempts: int = 3, base_delay: float = 0.1):
         attempt = 1

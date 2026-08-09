@@ -76,7 +76,7 @@ export class AuthService {
 
   deleteAccount(): Observable<{ message: string }> {
     return this.http
-      .delete<{ message: string }>(`${AUTH_ENDPOINTS.delete}`, {
+      .delete<{ message: string }>(`${AUTH_ENDPOINTS.deleteAccount}`, {
         withCredentials: true,
       })
       .pipe(tap(() => this.currentUser.set(null)));

@@ -75,6 +75,25 @@
     </div>
   </div>
 
+  @if (traversedFolders().length > 0) {
+  <div class="selected-files-list">
+    <h4>Folders to upload ({{ traversedFolders().length }})</h4>
+    <ul>
+      @for (folder of traversedFolders(); track $index) {
+      <li>
+        <div class="file-info">
+          <mat-icon>folder</mat-icon>
+          <span class="file-name">{{ folder.name }}</span>
+        </div>
+        <button mat-icon-button (click)="removeFolder($index)">
+          <mat-icon>close</mat-icon>
+        </button>
+      </li>
+      }
+    </ul>
+  </div>
+  }
+
   @if (selectedFiles().length > 0) {
   <div class="selected-files-list">
     <h4>Files to upload ({{ selectedFiles().length }})</h4>
@@ -109,7 +128,7 @@
   <button
     mat-flat-button
     color="primary"
-    [disabled]="selectedFiles().length === 0"
+    [disabled]="selectedFiles().length === 0 && traversedFolders().length === 0"
     (click)="confirmUpload()"
   >
     Upload

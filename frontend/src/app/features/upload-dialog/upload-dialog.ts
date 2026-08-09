@@ -5,10 +5,16 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { FormsModule } from '@angular/forms';
+import {
+  traverseDataTransferItems,
+  TraversedFileItem,
+  TraversedFolderItem,
+} from '../../shared/utils/folder-traversal';
 
 export interface UploadDialogResult {
   action: 'upload' | 'create-folder';
   files?: File[];
+  traversedFolders?: TraversedFolderItem[];
   folderName?: string;
 }
 
@@ -31,6 +37,7 @@ export class UploadDialog {
 
   isDragging = signal(false);
   selectedFiles = signal<File[]>([]);
+  traversedFolders = signal<TraversedFolderItem[]>([]);
   isCreatingFolder = signal(false);
   newFolderName = signal('');
 
@@ -46,12 +53,21 @@ export class UploadDialog {
     this.isDragging.set(false);
   }
 
-  onDrop(event: DragEvent): void {
+  async onDrop(event: DragEvent): Promise<void> {
     event.preventDefault();
     event.stopPropagation();
     this.isDragging.set(false);
 
-    if (event.dataTransfer?.files?.length) {
+    if (event.dataTransfer?.items?.length) {
+      const result = await traverseDataTransferItems(event.dataTransfer.items);
+      if (result.folders.length) {
+        this.traversedFolders.update((f) => [...f, ...result.folders]);
+      }
+      if (result.files.length) {
+        const droppedFiles = result.files.map((tf) => tf.file);
+        this.selectedFiles.update((files) => [...files, ...droppedFiles]);
+      }
+    } else if (event.dataTransfer?.files?.length) {
       const droppedFiles = Array.from(event.dataTransfer.files);
       this.selectedFiles.update((files) => [...files, ...droppedFiles]);
     }
@@ -69,6 +85,12 @@ export class UploadDialog {
     this.selectedFiles.update((files) => files.filter((_, i) => i !== index));
   }
 
+  removeFolder(index: number): void {
+    this.traversedFolders.update((folders) =>
+      folders.filter((_, i) => i !== index)
+    );
+  }
+
   toggleFolderInput(): void {
     this.isCreatingFolder.update((val) => !val);
     this.newFolderName.set('');
@@ -84,10 +106,11 @@ export class UploadDialog {
   }
 
   confirmUpload(): void {
-    if (this.selectedFiles().length > 0) {
+    if (this.selectedFiles().length > 0 || this.traversedFolders().length > 0) {
       this.dialogRef.close({
         action: 'upload',
         files: this.selectedFiles(),
+        traversedFolders: this.traversedFolders(),
       });
     }
   }

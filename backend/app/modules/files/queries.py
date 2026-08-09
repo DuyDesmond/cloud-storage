@@ -217,6 +217,10 @@ CALL_LOCK_NAMING_SCOPE = """
 SELECT nephos.lock_naming_scope($1, $2)
 """
 
+RESOLVE_FILE_NAME_COLLISION = """
+SELECT nephos.resolve_file_name_collision($1, $2, $3)
+"""
+
 RESOLVE_RESTORED_FILE_NAME = """
 SELECT nephos.resolve_restored_file_name($1, $2, $3)
 """

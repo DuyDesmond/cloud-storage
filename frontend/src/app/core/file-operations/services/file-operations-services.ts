@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpEvent, HttpHeaders } from '@angular/common/http';
 import { forkJoin, Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { FILE_OPERATION_ENDPOINTS } from '../endpoints/file-operation-endpoints';
@@ -9,7 +9,7 @@ import {
   DriveItem,
 } from '../../../shared/components/drive-item-card/drive-item.model';
 
-interface BackendFileResponse {
+export interface BackendFileResponse {
   id: string;
   owner_id: string;
   parent_folder_id: string | null;
@@ -25,7 +25,7 @@ interface BackendFileResponse {
   updated_at: string;
 }
 
-interface BackendFolderResponse {
+export interface BackendFolderResponse {
   id: string;
   owner_id: string;
   parent_folder_id: string | null;
@@ -37,13 +37,83 @@ interface BackendFolderResponse {
   updated_at: string;
 }
 
+export interface PresignedUploadRequestPayload {
+  file_name: string;
+  size_bytes: number;
+  mime_type?: string | null;
+  parent_folder_id?: string | null;
+  content_hash?: string | null;
+}
+
+export interface PresignedUploadResponsePayload {
+  presigned_url: string;
+  storage_key: string;
+  expires_in: number;
+  headers: Record<string, string>;
+}
+
+export interface CompleteUploadRequestPayload {
+  storage_key: string;
+  file_name: string;
+  size_bytes: number;
+  mime_type?: string | null;
+  parent_folder_id?: string | null;
+  content_hash?: string | null;
+}
+
+export interface InitiateMultipartUploadRequestPayload {
+  file_name: string;
+  size_bytes: number;
+  mime_type?: string | null;
+  parent_folder_id?: string | null;
+  content_hash?: string | null;
+}
+
+export interface InitiateMultipartUploadResponsePayload {
+  upload_id: string;
+  storage_key: string;
+  part_size: number;
+}
+
+export interface PresignPartRequestPayload {
+  upload_id: string;
+  storage_key: string;
+  part_number: number;
+}
+
+export interface PresignPartResponsePayload {
+  presigned_url: string;
+  part_number: number;
+}
+
+export interface MultipartPartItemPayload {
+  part_number: number;
+  etag: string;
+}
+
+export interface CompleteMultipartUploadRequestPayload {
+  upload_id: string;
+  storage_key: string;
+  parts: MultipartPartItemPayload[];
+  file_name: string;
+  size_bytes: number;
+  mime_type?: string | null;
+  parent_folder_id?: string | null;
+  content_hash?: string | null;
+}
+
+export interface AbortMultipartUploadRequestPayload {
+  upload_id: string;
+  storage_key: string;
+}
+
 @Injectable({
   providedIn: 'root',
 })
 export class FileOperationsService {
   constructor(private http: HttpClient) {}
 
-  private toDriveFile(file: BackendFileResponse): DriveFileItem {
+  public toDriveFile(file: BackendFileResponse): DriveFileItem {
     return {
       id: file.id,
       ownerId: file.owner_id,
@@ -62,7 +132,7 @@ export class FileOperationsService {
     };
   }
 
-  private toDriveFolder(folder: BackendFolderResponse): DriveFolderItem {
+  public toDriveFolder(folder: BackendFolderResponse): DriveFolderItem {
     return {
       id: folder.id,
       ownerId: folder.owner_id,
@@ -77,6 +147,90 @@ export class FileOperationsService {
     };
   }
 
+  requestPresignedUpload(
+    payload: PresignedUploadRequestPayload
+  ): Observable<PresignedUploadResponsePayload> {
+    return this.http.post<PresignedUploadResponsePayload>(
+      FILE_OPERATION_ENDPOINTS.uploadPresign,
+      payload,
+      { withCredentials: true }
+    );
+  }
+
+  completeDirectUpload(
+    payload: CompleteUploadRequestPayload
+  ): Observable<DriveFileItem> {
+    return this.http
+      .post<BackendFileResponse>(
+        FILE_OPERATION_ENDPOINTS.uploadComplete,
+        payload,
+        { withCredentials: true }
+      )
+      .pipe(map((res) => this.toDriveFile(res)));
+  }
+
+  initiateMultipartUpload(
+    payload: InitiateMultipartUploadRequestPayload
+  ): Observable<InitiateMultipartUploadResponsePayload> {
+    return this.http.post<InitiateMultipartUploadResponsePayload>(
+      FILE_OPERATION_ENDPOINTS.multipartInitiate,
+      payload,
+      { withCredentials: true }
+    );
+  }
+
+  presignMultipartPart(
+    payload: PresignPartRequestPayload
+  ): Observable<PresignPartResponsePayload> {
+    return this.http.post<PresignPartResponsePayload>(
+      FILE_OPERATION_ENDPOINTS.multipartPresignPart,
+      payload,
+      { withCredentials: true }
+    );
+  }
+
+  completeMultipartUpload(
+    payload: CompleteMultipartUploadRequestPayload
+  ): Observable<DriveFileItem> {
+    return this.http
+      .post<BackendFileResponse>(
+        FILE_OPERATION_ENDPOINTS.multipartComplete,
+        payload,
+        { withCredentials: true }
+      )
+      .pipe(map((res) => this.toDriveFile(res)));
+  }
+
+  abortMultipartUpload(
+    payload: AbortMultipartUploadRequestPayload
+  ): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(
+      FILE_OPERATION_ENDPOINTS.multipartAbort,
+      payload,
+      { withCredentials: true }
+    );
+  }
+
+  uploadBinaryToUrl(
+    url: string,
+    blob: Blob,
+    headers?: Record<string, string>
+  ): Observable<HttpEvent<any>> {
+    let httpHeaders = new HttpHeaders();
+    if (headers) {
+      Object.keys(headers).forEach((k) => {
+        httpHeaders = httpHeaders.set(k, headers[k]);
+      });
+    }
+
+    return this.http.request('PUT', url, {
+      body: blob,
+      headers: httpHeaders,
+      reportProgress: true,
+      observe: 'events',
+    });
+  }
+
   uploadFile(file: File, parentFolderId?: string): Observable<DriveFileItem> {
     const formData = new FormData();
     formData.append('upload_file', file);
@@ -85,7 +239,7 @@ export class FileOperationsService {
     }
 
     return this.http
-      .post<BackendFileResponse>(FILE_OPERATION_ENDPOINTS.files, formData, {
+      .post<BackendFileResponse>(FILE_OPERATION_ENDPOINTS.uploadFiles, formData, {
         withCredentials: true,
       })
       .pipe(map((payload) => this.toDriveFile(payload)));
@@ -93,7 +247,7 @@ export class FileOperationsService {
 
   uploadFiles(
     files: File[],
-    parentFolderId?: string,
+    parentFolderId?: string
   ): Observable<DriveFileItem[]> {
     if (files.length === 0) {
       return of([]);
@@ -111,20 +265,20 @@ export class FileOperationsService {
   trashFile(fileId: string): Observable<{ message: string }> {
     return this.http.delete<{ message: string }>(
       FILE_OPERATION_ENDPOINTS.trashFile(fileId),
-      { withCredentials: true },
+      { withCredentials: true }
     );
   }
 
   trashFolder(folderId: string): Observable<{ message: string }> {
     return this.http.delete<{ message: string }>(
       FILE_OPERATION_ENDPOINTS.trashFolder(folderId),
-      { withCredentials: true },
+      { withCredentials: true }
     );
   }
 
   createFolder(
     folderName: string,
-    parentFolderId?: string,
+    parentFolderId?: string
   ): Observable<DriveFolderItem> {
     return this.http
       .post<BackendFolderResponse>(
@@ -133,7 +287,7 @@ export class FileOperationsService {
           folder_name: folderName,
           parent_folder_id: parentFolderId ?? null,
         },
-        { withCredentials: true },
+        { withCredentials: true }
       )
       .pipe(map((result) => this.toDriveFolder(result)));
   }

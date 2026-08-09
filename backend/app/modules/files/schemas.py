@@ -77,3 +77,73 @@ class FileResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class PresignedUploadRequest(BaseModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(ge=0)
+    mime_type: str | None = None
+    parent_folder_id: uuid.UUID | None = None
+    content_hash: str | None = None
+
+
+class PresignedUploadResponse(BaseModel):
+    presigned_url: str
+    storage_key: str
+    expires_in: int = 600
+    headers: dict[str, str] = {}
+
+
+class CompleteUploadRequest(BaseModel):
+    storage_key: str
+    file_name: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(ge=0)
+    mime_type: str | None = None
+    parent_folder_id: uuid.UUID | None = None
+    content_hash: str | None = None
+
+
+class InitiateMultipartUploadRequest(BaseModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(ge=0)
+    mime_type: str | None = None
+    parent_folder_id: uuid.UUID | None = None
+    content_hash: str | None = None
+
+
+class InitiateMultipartUploadResponse(BaseModel):
+    upload_id: str
+    storage_key: str
+    part_size: int = 8 * 1024 * 1024  # 8 MB default chunk size
+
+
+class PresignPartRequest(BaseModel):
+    upload_id: str
+    storage_key: str
+    part_number: int = Field(ge=1, le=10000)
+
+
+class PresignPartResponse(BaseModel):
+    presigned_url: str
+    part_number: int
+
+
+class MultipartPartItem(BaseModel):
+    part_number: int = Field(ge=1, le=10000)
+    etag: str
+
+
+class CompleteMultipartUploadRequest(BaseModel):
+    upload_id: str
+    storage_key: str
+    parts: list[MultipartPartItem]
+    file_name: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(ge=0)
+    mime_type: str | None = None
+    parent_folder_id: uuid.UUID | None = None
+    content_hash: str | None = None
+
+
+class AbortMultipartUploadRequest(BaseModel):
+    upload_id: str
+    storage_key: str

@@ -1,10 +1,11 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import {
   SidePanel,
@@ -18,6 +19,9 @@ import {
   UploadDialogResult,
 } from '../upload-dialog/upload-dialog';
 import { FileOperationsService } from '../../core/file-operations/services/file-operations-services';
+import { UploadQueueService } from '../../core/file-operations/services/upload-queue.service';
+import { UploadWidget } from '../upload-widget/upload-widget';
+import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
 
 @Component({
   selector: 'app-drive',
@@ -32,11 +36,12 @@ import { FileOperationsService } from '../../core/file-operations/services/file-
     SidePanel,
     MobileBottomNav,
     DriveItemCard,
+    UploadWidget,
   ],
   templateUrl: './drive.html',
   styleUrls: ['./drive.scss'],
 })
-export class Drive {
+export class Drive implements OnInit, OnDestroy {
   usedStorage = signal<number>(5);
   totalStorage = signal<number>(20);
   currentNav = signal<SidePanelNavKey>('home');
@@ -45,16 +50,9 @@ export class Drive {
 
   private dialog = inject(MatDialog);
   private fileService = inject(FileOperationsService);
+  public uploadQueueService = inject(UploadQueueService);
 
-  onSidebarCollapseChange(collapsed: boolean): void {
-    this.isSidebarCollapsed.set(collapsed);
-  }
-
-  storagePercentage = computed(() => {
-    const total = this.totalStorage();
-    if (!total) return 0;
-    return Math.min(100, Math.round((this.usedStorage() / total) * 100));
-  });
+  private fileUploadedSub?: Subscription;
 
   // Items structured based on DB schema
   items = signal<DriveItem[]>([
@@ -89,6 +87,28 @@ export class Drive {
     },
   ]);
 
+  ngOnInit(): void {
+    this.fileUploadedSub = this.uploadQueueService.onFileUploaded.subscribe(
+      (newFileItem) => {
+        this.items.update((current) => [newFileItem, ...current]);
+      }
+    );
+  }
+
+  ngOnDestroy(): void {
+    this.fileUploadedSub?.unsubscribe();
+  }
+
+  onSidebarCollapseChange(collapsed: boolean): void {
+    this.isSidebarCollapsed.set(collapsed);
+  }
+
+  storagePercentage = computed(() => {
+    const total = this.totalStorage();
+    if (!total) return 0;
+    return Math.min(100, Math.round((this.usedStorage() / total) * 100));
+  });
+
   switchNav(nav: SidePanelNavKey) {
     this.currentNav.set(nav);
   }
@@ -104,29 +124,47 @@ export class Drive {
       .subscribe((result: UploadDialogResult | undefined) => {
         if (!result) return;
 
-        if (result.action === 'upload' && result.files) {
-          this.uploadFiles(result.files);
+        if (result.action === 'upload') {
+          if (result.files?.length) {
+            this.uploadFiles(result.files);
+          }
+          if (result.traversedFolders?.length) {
+            this.uploadFolderTree(result.traversedFolders);
+          }
         } else if (result.action === 'create-folder' && result.folderName) {
           this.createFolder(result.folderName);
         }
       });
   }
 
-  private uploadFiles(files: File[]): void {
+  private uploadFiles(files: File[], parentFolderId?: string): void {
     if (files.length === 0) return;
-    this.isLoading.set(true);
+    this.uploadQueueService.enqueueFiles(files, parentFolderId);
+  }
 
-    this.fileService.uploadFiles(files).subscribe({
-      next: (uploaded) => {
-        this.items.update((current) => [...uploaded, ...current]);
-      },
-      error: (error) => {
-        console.error('Upload failed:', error);
-      },
-      complete: () => {
-        this.isLoading.set(false);
-      },
-    });
+  private async uploadFolderTree(
+    folders: TraversedFolderItem[],
+    parentFolderId?: string
+  ): Promise<void> {
+    for (const folder of folders) {
+      try {
+        const createdFolder = await firstValueFrom(
+          this.fileService.createFolder(folder.name, parentFolderId)
+        );
+        this.items.update((current) => [createdFolder, ...current]);
+
+        if (folder.files.length > 0) {
+          const files = folder.files.map((tf) => tf.file);
+          this.uploadFiles(files, createdFolder.id);
+        }
+
+        if (folder.subfolders.length > 0) {
+          await this.uploadFolderTree(folder.subfolders, createdFolder.id);
+        }
+      } catch (err) {
+        console.error(`Failed to create folder ${folder.name}`, err);
+      }
+    }
   }
 
   private createFolder(folderName: string): void {
@@ -171,7 +209,7 @@ export class Drive {
       this.fileService.trashFile(item.id).subscribe({
         next: () => {
           this.items.update((current) =>
-            current.filter((entry) => entry.id !== item.id),
+            current.filter((entry) => entry.id !== item.id)
           );
         },
         error: (error) => {
@@ -182,7 +220,7 @@ export class Drive {
       this.fileService.trashFolder(item.id).subscribe({
         next: () => {
           this.items.update((current) =>
-            current.filter((entry) => entry.id !== item.id),
+            current.filter((entry) => entry.id !== item.id)
           );
         },
         error: (error) => {
