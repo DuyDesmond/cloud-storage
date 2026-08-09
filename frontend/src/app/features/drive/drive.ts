@@ -1,26 +1,23 @@
-import { Component, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { MatMenuModule } from '@angular/material/menu';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import {
   SidePanel,
   SidePanelNavKey,
 } from '../../shared/components/side-panel/side-panel';
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
-
-export interface DriveItem {
-  id: string;
-  name: string;
-  type: 'image' | 'pdf' | 'video' | 'folder' | 'zip' | 'doc';
-  updated: string;
-  size?: string;
-  itemsCount?: number;
-  previewUrl?: string;
-}
+import { DriveItemCard } from '../../shared/components/drive-item-card/drive-item-card';
+import { DriveItem } from '../../shared/components/drive-item-card/drive-item.model';
+import {
+  UploadDialog,
+  UploadDialogResult,
+} from '../upload-dialog/upload-dialog';
+import { FileOperationsService } from '../../core/file-operations/services/file-operations-services';
 
 @Component({
   selector: 'app-drive',
@@ -31,84 +28,167 @@ export interface DriveItem {
     MatIconModule,
     MatButtonModule,
     MatProgressBarModule,
-    MatMenuModule,
     DashboardHeader,
     SidePanel,
     MobileBottomNav,
+    DriveItemCard,
   ],
   templateUrl: './drive.html',
   styleUrls: ['./drive.scss'],
 })
 export class Drive {
+  usedStorage = signal<number>(5);
+  totalStorage = signal<number>(20);
   currentNav = signal<SidePanelNavKey>('home');
+  isLoading = signal<boolean>(false);
+  isSidebarCollapsed = signal<boolean>(false);
 
-  usedStorage = signal<number>(4.2);
-  totalStorage = signal<number>(15);
+  private dialog = inject(MatDialog);
+  private fileService = inject(FileOperationsService);
 
-  storagePercentage = computed(() =>
-    Math.round((this.usedStorage() / this.totalStorage()) * 100),
-  );
-
-  suggestedItems = signal<DriveItem[]>([
-    {
-      id: '1',
-      name: 'Mountain_Retreat.jpg',
-      type: 'image',
-      updated: 'Oct 24, 2023, 10:20 AM',
-      size: '2.4 MB',
-      previewUrl:
-        'https://lh3.googleusercontent.com/aida-public/AB6AXuBIt_YtWjClysKsqMGTV1X7X5Ft3yFZgQEWcF0OHo8Gxkz3qR7_KAMsYXFRg2GMbXaU3WOIN1matFYbR6H4A5J26m1nAF0QmGuAUv_Wyxq4GjmTJAlo2_lqXGpNMHbJjD9rcJb_pGPVHNfI84jGXcasOHz-ppbKgap2Ee-mVtoOGElsiE_ir8xXbY53ItE-F-piVCzTyQqPqEL3e3l5uYViFU6SqJZNjUe9LEp4gF9BpOIe4sS_qBza',
-    },
-    {
-      id: '2',
-      name: 'Q4_Market_Report.pdf',
-      type: 'pdf',
-      updated: 'Oct 22, 2023, 03:15 PM',
-      size: '1.2 MB',
-    },
-  ]);
-
-  favoriteItems = signal<DriveItem[]>([
-    {
-      id: '3',
-      name: 'Brand_Intro_v2.mp4',
-      type: 'video',
-      updated: 'Sep 18, 2023, 09:45 AM',
-      size: '45.8 MB',
-      previewUrl:
-        'https://lh3.googleusercontent.com/aida-public/AB6AXuA0kqgSB7wp4fY6m1GxLTru7DovhA0bqnY5QTTkqfDzOBrvOdnt_JWg47y-sATjfHTPFiKG5YONAJpBdNQyWIrr0Qu1eowQL28VZTbWz9VlBDHrWoD4tlRmsnBwwz43oRtOaZB2KmUzkWMYpFp8KFJbbHAAtT_mavlN31wopEGw1gb7sy-hj-t7dtaBP0DKT1Qtz6h5cKQulcRnCgRmae2OCA3VdDqv9sb_zfTeR81Ez1jzkWIVZ8BJ',
-    },
-  ]);
-
-  myFiles = signal<DriveItem[]>([
-    {
-      id: '4',
-      name: 'Work_Project_2024',
-      type: 'folder',
-      updated: 'Today, 11:00 AM',
-      itemsCount: 12,
-    },
-    {
-      id: '5',
-      name: 'Project_Assets_Final.zip',
-      type: 'zip',
-      updated: 'Yesterday, 04:30 PM',
-      size: '128 MB',
-    },
-    {
-      id: '6',
-      name: 'Marketing_Copy.docx',
-      type: 'doc',
-      updated: 'Oct 20, 2023, 01:10 PM',
-      size: '15 KB',
-    },
-  ]);
-
-  onUploadTrigger() {
-    // Upload logic trigger
+  onSidebarCollapseChange(collapsed: boolean): void {
+    this.isSidebarCollapsed.set(collapsed);
   }
+
+  storagePercentage = computed(() => {
+    const total = this.totalStorage();
+    if (!total) return 0;
+    return Math.min(100, Math.round((this.usedStorage() / total) * 100));
+  });
+
+  // Items structured based on DB schema
+  items = signal<DriveItem[]>([
+    {
+      id: 'f101',
+      ownerId: 'u1',
+      parentFolderId: null,
+      path: 'root',
+      name: 'Q4 Market Report.pdf',
+      itemType: 'file',
+      storageKey: 'users/u1/q4_report.pdf',
+      sizeBytes: 1258291,
+      mimeType: 'application/pdf',
+      contentHash: null,
+      isTrashed: false,
+      trashedAt: null,
+      createdAt: '2023-10-22T15:15:00Z',
+      updatedAt: '2023-10-22T15:15:00Z',
+    },
+    {
+      id: 'd101',
+      ownerId: 'u1',
+      parentFolderId: null,
+      path: 'root',
+      name: 'Project Assets',
+      itemType: 'folder',
+      itemsCount: 12,
+      isTrashed: false,
+      trashedAt: null,
+      createdAt: '2023-09-01T10:00:00Z',
+      updatedAt: '2023-09-18T09:45:00Z',
+    },
+  ]);
 
   switchNav(nav: SidePanelNavKey) {
     this.currentNav.set(nav);
+  }
+
+  onUploadTrigger(): void {
+    const dialogRef = this.dialog.open(UploadDialog, {
+      width: '500px',
+      disableClose: false,
+    });
+
+    dialogRef
+      .afterClosed()
+      .subscribe((result: UploadDialogResult | undefined) => {
+        if (!result) return;
+
+        if (result.action === 'upload' && result.files) {
+          this.uploadFiles(result.files);
+        } else if (result.action === 'create-folder' && result.folderName) {
+          this.createFolder(result.folderName);
+        }
+      });
+  }
+
+  private uploadFiles(files: File[]): void {
+    if (files.length === 0) return;
+    this.isLoading.set(true);
+
+    this.fileService.uploadFiles(files).subscribe({
+      next: (uploaded) => {
+        this.items.update((current) => [...uploaded, ...current]);
+      },
+      error: (error) => {
+        console.error('Upload failed:', error);
+      },
+      complete: () => {
+        this.isLoading.set(false);
+      },
+    });
+  }
+
+  private createFolder(folderName: string): void {
+    this.fileService.createFolder(folderName).subscribe({
+      next: (folder) => {
+        this.items.update((current) => [folder, ...current]);
+      },
+      error: (error) => {
+        console.error('Create folder failed:', error);
+      },
+    });
+  }
+
+  onOpenItem(item: DriveItem): void {
+    if (item.itemType === 'folder') {
+      console.log('Navigating to folder ID:', item.id);
+    } else {
+      console.log('Previewing file:', item.name);
+    }
+  }
+
+  onDownloadItem(item: DriveItem): void {
+    if (item.itemType !== 'file') return;
+
+    this.fileService.downloadFile(item.id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = item.name;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      },
+      error: (error) => {
+        console.error('Download failed:', error);
+      },
+    });
+  }
+
+  onTrashItem(item: DriveItem): void {
+    if (item.itemType === 'file') {
+      this.fileService.trashFile(item.id).subscribe({
+        next: () => {
+          this.items.update((current) =>
+            current.filter((entry) => entry.id !== item.id),
+          );
+        },
+        error: (error) => {
+          console.error('Trash file failed:', error);
+        },
+      });
+    } else {
+      this.fileService.trashFolder(item.id).subscribe({
+        next: () => {
+          this.items.update((current) =>
+            current.filter((entry) => entry.id !== item.id),
+          );
+        },
+        error: (error) => {
+          console.error('Trash folder failed:', error);
+        },
+      });
+    }
   }
 }

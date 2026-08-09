@@ -12,6 +12,7 @@ from typing import Any, Literal
 import asyncpg
 import boto3
 from botocore.exceptions import ClientError
+from boto3.s3.transfer import TransferConfig
 from fastapi import Depends, HTTPException, UploadFile, status, Request
 from fastapi.responses import StreamingResponse
 
@@ -22,12 +23,19 @@ from app.modules.files.repository import FileOperationsRepository
 
 
 class R2StorageGateway:
+    
     def __init__(self) -> None:
         self.endpoint_url = getattr(settings, "R2_ENDPOINT_URL", None)
         self.access_key = getattr(settings, "R2_ACCESS_KEY_ID", None)
         self.secret_key = getattr(settings, "R2_SECRET_ACCESS_KEY", None)
         self.bucket_name = getattr(settings, "R2_BUCKET_NAME", None)
         self._client: Any | None = None
+        self.config = TransferConfig(
+            multipart_threshold=8 * 1024 * 1024,  # 8 MB: threshold to trigger multipart
+            multipart_chunksize=16 * 1024 * 1024, # 16 MB: size of each uploaded chunk
+            max_concurrency=10,                    # Number of simultaneous threads
+            use_threads=False
+        )
 
     def _get_client(self) -> Any:
         if not self.endpoint_url or not self.access_key or not self.secret_key:
@@ -462,11 +470,29 @@ class FileOperationsService:
 
         parent_id = folder.get("parent_folder_id")
         owner_id = folder.get("owner_id")
+        folder_name = folder.get("folder_name")
+
+        if not owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Folder record is missing a valid owner ID."
+            )
+
+        if not folder_name:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Folder name mút not be empty."
+            )
 
         async def _op():
             async with conn.transaction():
                 await self.repo.call_lock_naming_scope(conn, parent_id, owner_id)
-                new_name = await self.repo.resolve_restored_folder_name(conn, parent_id, owner_id, folder.get("folder_name"))
+                new_name = await self.repo.resolve_restored_folder_name(conn, parent_id, owner_id, folder_name)
+                if new_name is None:
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail="Could not resolve a valid name for the restored folder."
+                            )
                 return await self.repo.restore_folder(conn, folder_id, new_name)
 
         try:
@@ -514,11 +540,29 @@ class FileOperationsService:
 
         parent_id = file_row.get("parent_folder_id")
         owner_id = file_row.get("owner_id")
+        file_name = file_row.get("file_name")
+
+        if not owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="File record is missing a valid owner ID."
+            )
+
+        if not file_name:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="File name is missing."
+            )
 
         async def _op():
             async with conn.transaction():
                 await self.repo.call_lock_naming_scope(conn, parent_id, owner_id)
-                new_name = await self.repo.resolve_restored_file_name(conn, parent_id, owner_id, file_row.get("file_name"))
+                new_name = await self.repo.resolve_restored_file_name(conn, parent_id, owner_id, file_name)
+                if new_name is None:
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail="Could not resolve a valid name for the restored folder."
+                            )
                 return await self.repo.restore_file(conn, file_id, new_name)
 
         try:
@@ -567,6 +611,11 @@ class FileOperationsService:
             )
             if existing:
                 updated = await self.repo.update_acl_entry_permission(conn, existing["id"], payload.permission)
+                if not updated:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND, 
+                            detail="Failed to update share permissions; entry no longer exists."
+                        )
                 return self._as_share_response(updated)
 
             row = await self.repo.create_acl_entry(
@@ -593,6 +642,11 @@ class FileOperationsService:
                 password_hash=password_hash,
                 permission=payload.permission,
             )
+            if not updated:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, 
+                        detail="Failed to update public link; link no longer exists."
+                    )
             return self._as_share_response(updated)
 
         row = await self.repo.create_acl_entry(

@@ -1,0 +1,49 @@
+<div class="drive-card" (dblclick)="onCardClick()">
+  <div class="card-header">
+    <span class="card-title" [title]="item().name">{{ item().name }}</span>
+    <button
+      mat-icon-button
+      [matMenuTriggerFor]="menu"
+      class="action-btn"
+      (click)="$event.stopPropagation()"
+    >
+      <mat-icon>more_vert</mat-icon>
+    </button>
+
+    <mat-menu #menu="matMenu">
+      @if (item().itemType === 'file') {
+      <button mat-menu-item (click)="onDownload($event)">
+        <mat-icon>download</mat-icon>
+        <span>Download</span>
+      </button>
+      }
+      <button mat-menu-item class="danger-item" (click)="onTrash($event)">
+        <mat-icon>delete</mat-icon>
+        <span>Move to Trash</span>
+      </button>
+    </mat-menu>
+  </div>
+
+  <div class="card-preview">
+    @if (item().itemType === 'file' && $any(item()).previewUrl) {
+    <img [src]="$any(item()).previewUrl" [alt]="item().name" />
+    } @else {
+    <mat-icon class="large-icon" [ngClass]="item().itemType">
+      {{ iconName() }}
+    </mat-icon>
+    }
+  </div>
+
+  <div class="card-footer">
+    <div class="meta-info">
+      <span>{{ item().updatedAt | date:'shortDate' }}</span>
+      <span>{{ displayMeta() }}</span>
+    </div>
+    <mat-icon
+      class="type-icon"
+      [class.folder-color]="item().itemType === 'folder'"
+    >
+      {{ item().itemType === 'folder' ? 'folder' : 'description' }}
+    </mat-icon>
+  </div>
+</div>

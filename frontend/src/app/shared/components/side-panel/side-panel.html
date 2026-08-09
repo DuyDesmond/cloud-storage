@@ -1,4 +1,3 @@
-<!-- Added: Mobile backdrop overlay for dimming effect -->
 <div
   class="backdrop"
   [class.visible]="!isCollapsed()"
@@ -7,7 +6,6 @@
 ></div>
 
 <aside class="side-panel" [class.collapsed]="isCollapsed()">
-  <!-- Added: Collapse/Expand toggle button -->
   <div class="collapse-toggle-container">
     <button
       type="button"
@@ -15,9 +13,22 @@
       (click)="toggleCollapse()"
       [attr.aria-label]="isCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
     >
-      <mat-icon
-        >{{ isCollapsed() ? 'chevron_right' : 'chevron_left' }}</mat-icon
-      >
+      <mat-icon>
+        {{ isCollapsed() ? 'chevron_right' : 'chevron_left' }}
+      </mat-icon>
+    </button>
+  </div>
+
+  <div class="primary-upload-action">
+    <button
+      mat-flat-button
+      color="primary"
+      class="upload-btn"
+      (click)="upload.emit()"
+      [attr.aria-label]="'Upload File'"
+    >
+      <mat-icon>add</mat-icon>
+      <span class="action-label">New Upload</span>
     </button>
   </div>
 
@@ -34,14 +45,15 @@
   </div>
 
   <nav class="nav-links">
-    @for (item of navItems; track item.key){
+    @for (item of navItems; track item.key) {
     <button
       [class.active]="activeNav() === item.key"
       (click)="onNavClick(item)"
       class="nav-item"
+      [title]="isCollapsed() ? item.label : ''"
     >
       <mat-icon>{{ item.icon }}</mat-icon>
-      <span>{{ item.label }}</span>
+      <span class="nav-label">{{ item.label }}</span>
     </button>
     }
   </nav>
@@ -53,8 +65,7 @@
       class="upgrade-btn"
       (click)="upgrade.emit()"
     >
-      <!-- Added: Icon for collapsed state -->
-      <mat-icon class="action-icon">upload</mat-icon>
+      <mat-icon class="action-icon">arrow_upward</mat-icon>
       <span class="action-label">Upgrade Storage</span>
     </button>
   </div>

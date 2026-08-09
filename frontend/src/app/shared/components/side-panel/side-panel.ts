@@ -41,7 +41,10 @@ export class SidePanel {
   activeNav = input<SidePanelNavKey>('home');
   navChange = output<SidePanelNavKey>();
   upgrade = output<void>();
+  upload = output<void>();
+
   isCollapsed = signal<boolean>(false);
+  collapsedChange = output<boolean>();
 
   navItems: SidePanelNavItem[] = [
     { key: 'home', icon: 'home', label: 'Home', route: '/drive' },

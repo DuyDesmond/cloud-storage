@@ -19,6 +19,7 @@ RETENTION_DAYS = int(os.getenv("TRASH_RETENTION_DAYS", "30"))
 
 async def purge_trashed():
     await database.init_db_pool()
+    assert database.pool is not None
     repo = FileOperationsRepository()
     storage = R2StorageGateway()
 

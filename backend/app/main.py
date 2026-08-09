@@ -4,8 +4,8 @@ from app.core.config import settings
 from app.core.database import init_db_pool, close_db_pool, pool
 from app.modules.auth.models import CREATE_USERS_TABLE_SQL
 from app.modules.auth.router import router as auth_router
-from app.modules.file_operations.models import get_file_operations_tables_sql
-from app.modules.file_operations.router import router as file_operations_router
+from app.modules.files.models import get_file_operations_tables_sql
+from app.modules.files.router import router as file_operations_router
 from fastapi.middleware.cors import CORSMiddleware
 import app.modules.auth
 
