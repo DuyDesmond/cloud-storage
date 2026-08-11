@@ -154,19 +154,25 @@ WHERE path <@ $1
 """
 
 GET_ALL_TRASHED_FILES_BY_OWNER = """
-SELECT id, storage_key
+SELECT id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_type, content_hash,
+       path, is_trashed, trashed_at, created_at, updated_at
 FROM nephos.files
-WHERE owner_id = $1
-  AND is_trashed = TRUE
+WHERE owner_id = $1 AND is_trashed = TRUE
+  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
 """
 
 GET_ALL_TRASHED_FOLDERS_BY_OWNER = """
-SELECT id
+SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
 FROM nephos.folders
-WHERE owner_id = $1
-  AND is_trashed = TRUE
+WHERE owner_id = $1 AND is_trashed = TRUE
+  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
 """
-
+"""
+SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
+FROM nephos.folders
+WHERE owner_id = $1 AND is_trashed = FALSE
+  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
+"""
 
 DELETE_FILE_BY_ID = """
 DELETE FROM nephos.files WHERE id = $1
@@ -212,6 +218,15 @@ GET_EFFECTIVE_PERMISSION = """
 SELECT nephos.effective_permission($1, $2, $3, $4)
 """
 
+NAME_EXISTS = """
+  SELECT nephos.name_exists(
+      p_is_file => $1,
+      p_parent_folder_id => $2,
+      p_owner_id => $3,
+      p_name => $4,
+      p_exclude_id => $5
+  );
+"""
 
 CALL_LOCK_NAMING_SCOPE = """
 SELECT nephos.lock_naming_scope($1, $2)
@@ -248,6 +263,17 @@ WHERE id = $1
 RETURNING id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
 """
 
+GET_USER_FOLDERS = """
+SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
+FROM nephos.folders
+WHERE owner_id = $1 AND is_trashed = FALSE
+  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
+"""
 
-# Object deletion outbox/queue (for DB↔object-store consistency)
-# Object deletion outbox/queue removed: using synchronous deletion flow instead.
+GET_USER_FILES = """
+SELECT id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_type, content_hash,
+       path, is_trashed, trashed_at, created_at, updated_at
+FROM nephos.files
+WHERE owner_id = $1 AND is_trashed = FALSE
+  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
+"""

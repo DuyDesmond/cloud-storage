@@ -50,7 +50,7 @@ export class SidePanel {
     { key: 'home', icon: 'home', label: 'Home', route: '/drive' },
     { key: 'recent', icon: 'schedule', label: 'Recent', route: '/drive' },
     { key: 'starred', icon: 'star', label: 'Starred', route: '/drive' },
-    { key: 'trash', icon: 'delete', label: 'Trash', route: '/drive' },
+    { key: 'trash', icon: 'delete', label: 'Trash', route: '/trash' },
   ];
 
   storagePercentage(): number {

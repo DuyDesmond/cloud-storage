@@ -1,4 +1,12 @@
-import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
+import { FileOperationsService } from '../../core/file-operations/services/file-operations.services';
+import {
+  Component,
+  inject,
+  signal,
+  computed,
+  OnInit,
+  OnDestroy,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -18,11 +26,42 @@ import {
   UploadDialog,
   UploadDialogResult,
 } from '../upload-dialog/upload-dialog';
-import { FileOperationsService } from '../../core/file-operations/services/file-operations-services';
-import { UploadQueueService } from '../../core/file-operations/services/upload-queue.service';
+import { UploadQueueService } from '../../core/file-operations/services/upload-queue-service';
 import { UploadWidget } from '../upload-widget/upload-widget';
 import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
 
+export interface Folder {
+  id: string;
+  owner_id: string;
+  parent_folder_id: string | null;
+  folder_name: string;
+  path: string;
+  is_trashed: boolean;
+  trashed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FileItem {
+  id: string;
+  owner_id: string;
+  parent_folder_id: string | null;
+  storage_key: string;
+  file_name: string;
+  size_bytes: number;
+  mime_type: string;
+  content_hash: string;
+  path: string;
+  is_trashed: boolean;
+  trashed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StorageContentResponse {
+  folders: Folder[];
+  files: FileItem[];
+}
 @Component({
   selector: 'app-drive',
   standalone: true,
@@ -88,10 +127,12 @@ export class Drive implements OnInit, OnDestroy {
   ]);
 
   ngOnInit(): void {
+    this.fetchRootContents();
+
     this.fileUploadedSub = this.uploadQueueService.onFileUploaded.subscribe(
       (newFileItem) => {
         this.items.update((current) => [newFileItem, ...current]);
-      }
+      },
     );
   }
 
@@ -101,6 +142,50 @@ export class Drive implements OnInit, OnDestroy {
 
   onSidebarCollapseChange(collapsed: boolean): void {
     this.isSidebarCollapsed.set(collapsed);
+  }
+
+  fetchRootContents(): void {
+    this.isLoading.set(true);
+    this.fileService.getStorageContents().subscribe({
+      next: (data) => {
+        const folderItems: DriveItem[] = data.folders.map((f) => ({
+          id: f.id,
+          ownerId: f.owner_id,
+          parentFolderId: f.parent_folder_id,
+          path: f.path,
+          name: f.folder_name,
+          itemType: 'folder',
+          isTrashed: f.is_trashed,
+          trashedAt: f.trashed_at,
+          createdAt: f.created_at,
+          updatedAt: f.updated_at,
+        }));
+
+        const fileItems: DriveItem[] = data.files.map((f) => ({
+          id: f.id,
+          ownerId: f.owner_id,
+          parentFolderId: f.parent_folder_id,
+          path: f.path,
+          name: f.file_name,
+          itemType: 'file',
+          storageKey: f.storage_key,
+          sizeBytes: f.size_bytes,
+          mimeType: f.mime_type,
+          contentHash: f.content_hash,
+          isTrashed: f.is_trashed,
+          trashedAt: f.trashed_at,
+          createdAt: f.created_at,
+          updatedAt: f.updated_at,
+        }));
+
+        this.items.set([...folderItems, ...fileItems]);
+        this.isLoading.set(false);
+      },
+      error: (err) => {
+        console.error('Error fetching drive contents', err);
+        this.isLoading.set(false);
+      },
+    });
   }
 
   storagePercentage = computed(() => {
@@ -144,12 +229,12 @@ export class Drive implements OnInit, OnDestroy {
 
   private async uploadFolderTree(
     folders: TraversedFolderItem[],
-    parentFolderId?: string
+    parentFolderId?: string,
   ): Promise<void> {
     for (const folder of folders) {
       try {
         const createdFolder = await firstValueFrom(
-          this.fileService.createFolder(folder.name, parentFolderId)
+          this.fileService.createFolder(folder.name, parentFolderId),
         );
         this.items.update((current) => [createdFolder, ...current]);
 
@@ -209,7 +294,7 @@ export class Drive implements OnInit, OnDestroy {
       this.fileService.trashFile(item.id).subscribe({
         next: () => {
           this.items.update((current) =>
-            current.filter((entry) => entry.id !== item.id)
+            current.filter((entry) => entry.id !== item.id),
           );
         },
         error: (error) => {
@@ -220,7 +305,7 @@ export class Drive implements OnInit, OnDestroy {
       this.fileService.trashFolder(item.id).subscribe({
         next: () => {
           this.items.update((current) =>
-            current.filter((entry) => entry.id !== item.id)
+            current.filter((entry) => entry.id !== item.id),
           );
         },
         error: (error) => {

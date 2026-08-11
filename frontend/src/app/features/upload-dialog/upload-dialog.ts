@@ -87,7 +87,7 @@ export class UploadDialog {
 
   removeFolder(index: number): void {
     this.traversedFolders.update((folders) =>
-      folders.filter((_, i) => i !== index)
+      folders.filter((_, i) => i !== index),
     );
   }
 

@@ -1,6 +1,6 @@
 import uuid
 from unittest.mock import AsyncMock, patch
-# import pytest
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -51,7 +51,16 @@ def test_presigned_upload_and_complete_flow():
              patch("app.modules.files.repository.FileOperationsRepository.create_file", new_callable=AsyncMock) as mock_create:
 
             mock_gen.return_value = "https://r2.cloudflarestorage.com/nephos/test.txt?presigned=true"
-            mock_head.return_value = {"ContentLength": 100}
+
+            mock_head.return_value = {
+                "ContentLength": 100,
+                "ETag": '"sha256hash"',
+                "ChecksumSHA256": "sha256hash",
+                "Metadata": {
+                    "content-hash": "sha256hash",
+                    "sha256": "sha256hash",
+                },
+            }
             
             file_id = uuid.uuid4()
             storage_key = f"storage/{user_id}/1234/test.txt"
@@ -92,6 +101,9 @@ def test_presigned_upload_and_complete_flow():
                     "content_hash": "sha256hash",
                 },
             )
+            if res2.status_code != 201:
+                print("\n[DEBUG ERROR]:", res2.status_code, res2.json())
+
             assert res2.status_code == 201
             data2 = res2.json()
             assert data2["id"] == str(file_id)

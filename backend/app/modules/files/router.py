@@ -14,6 +14,14 @@ from app.modules.files.service import FileOperationsService
 
 router = APIRouter(prefix="/storage", tags=["File Operations"])
 
+@router.get("/retrieve", response_model=schemas.StorageContentResponse)
+async def get_storage_contents(
+    parent_folder_id: uuid.UUID | None = None,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.get_storage_contents(conn, current_user, parent_folder_id)
 
 @router.post("/folders", response_model=schemas.FolderResponse, status_code=status.HTTP_201_CREATED)
 async def create_folder(
@@ -34,7 +42,6 @@ async def upload_file(
     service: FileOperationsService = Depends(FileOperationsService),
 ):
     return await service.upload_file(conn, current_user, parent_folder_id, upload_file)
-
 
 @router.post("/upload/presign", response_model=schemas.PresignedUploadResponse)
 async def request_presigned_upload(
@@ -92,8 +99,6 @@ async def abort_multipart_upload(
     service: FileOperationsService = Depends(FileOperationsService),
 ):
     return await service.abort_multipart_upload(current_user, payload)
-
-
 
 @router.get("/files/{file_id}/download")
 async def download_file(
@@ -216,3 +221,12 @@ async def restore_folder(
     service: FileOperationsService = Depends(FileOperationsService),
 ):
     return await service.restore_folder(conn, current_user, folder_id)
+
+
+@router.get("/trash", response_model=schemas.StorageContentResponse)
+async def get_trashed_contents(
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.get_trashed_contents(conn, current_user)

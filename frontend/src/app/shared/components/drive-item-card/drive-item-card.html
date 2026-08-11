@@ -11,16 +11,31 @@
     </button>
 
     <mat-menu #menu="matMenu">
-      @if (item().itemType === 'file') {
+      @if (item().itemType === 'file' && !isTrashView()) {
       <button mat-menu-item (click)="onDownload($event)">
         <mat-icon>download</mat-icon>
         <span>Download</span>
       </button>
-      }
+      } @if (isTrashView()) {
+      <button mat-menu-item (click)="onRestore($event)">
+        <mat-icon>restore</mat-icon>
+        <span>Restore</span>
+      </button>
+
+      <button
+        mat-menu-item
+        class="danger-item"
+        (click)="onPermanentDelete($event)"
+      >
+        <mat-icon>delete_forever</mat-icon>
+        <span>Delete Permanently</span>
+      </button>
+      } @else {
       <button mat-menu-item class="danger-item" (click)="onTrash($event)">
         <mat-icon>delete</mat-icon>
         <span>Move to Trash</span>
       </button>
+      }
     </mat-menu>
   </div>
 

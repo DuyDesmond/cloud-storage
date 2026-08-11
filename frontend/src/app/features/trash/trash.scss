@@ -1,0 +1,53 @@
+@import "../drive/drive.scss"; // Inherit baseline canvas layout styles
+
+.trash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+
+  .empty-trash-btn {
+    border-radius: 8px;
+    font-weight: 500;
+
+    mat-icon {
+      margin-right: 6px;
+    }
+  }
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 16px;
+  text-align: center;
+
+  .empty-icon {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    color: #94a3b8;
+    margin-bottom: 16px;
+  }
+
+  h3 {
+    margin: 0 0 8px 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #0b1c30;
+  }
+
+  p {
+    margin: 0;
+    font-size: 14px;
+    color: #64748b;
+  }
+}
+
+.loading-bar {
+  margin-top: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+}

@@ -9,6 +9,9 @@ PermissionLevel = Literal["view", "edit"]
 PrincipalType = Literal["user", "public_link"]
 TargetType = Literal["file", "folder"]
 
+class StorageContentResponse(BaseModel):
+    folders: list[FolderResponse]
+    files: list[FileResponse]
 
 class FolderCreateRequest(BaseModel):
     folder_name: str = Field(min_length=1, max_length=255)
@@ -146,4 +149,4 @@ class CompleteMultipartUploadRequest(BaseModel):
 
 class AbortMultipartUploadRequest(BaseModel):
     upload_id: str
-    storage_key: str
+    storage_key: str

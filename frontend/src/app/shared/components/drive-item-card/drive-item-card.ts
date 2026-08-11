@@ -14,11 +14,14 @@ import { DriveItem } from './drive-item.model';
 })
 export class DriveItemCard {
   item = input.required<DriveItem>();
+  isTrashView = input<boolean>();
 
   // Outputs for parent drive component actions
   open = output<DriveItem>();
   download = output<DriveItem>();
   trash = output<DriveItem>();
+  restore = output<DriveItem>();
+  permanentDelete = output<DriveItem>();
 
   // Dynamic formatting based on DB schema fields
   displayMeta = computed(() => {
@@ -52,6 +55,16 @@ export class DriveItemCard {
   onTrash(event: MouseEvent): void {
     event.stopPropagation();
     this.trash.emit(this.item());
+  }
+
+  onRestore(event: MouseEvent): void {
+    event.stopPropagation();
+    this.restore.emit(this.item());
+  }
+
+  onPermanentDelete(event: MouseEvent): void {
+    event.stopPropagation();
+    this.permanentDelete.emit(this.item());
   }
 
   private formatBytes(bytes: number): string {

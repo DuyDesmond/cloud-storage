@@ -20,7 +20,7 @@ export interface DragAndDropResult {
  * using Webkit FileSystem API (webkitGetAsEntry).
  */
 export async function traverseDataTransferItems(
-  items: DataTransferItemList
+  items: DataTransferItemList,
 ): Promise<DragAndDropResult> {
   const resultFiles: TraversedFileItem[] = [];
   const resultFolders: TraversedFolderItem[] = [];
@@ -60,14 +60,14 @@ function getFileFromEntry(fileEntry: any): Promise<File | null> {
   return new Promise((resolve) => {
     fileEntry.file(
       (file: File) => resolve(file),
-      () => resolve(null)
+      () => resolve(null),
     );
   });
 }
 
 function readDirectoryEntry(
   dirEntry: any,
-  parentPath: string
+  parentPath: string,
 ): Promise<TraversedFolderItem> {
   return new Promise((resolve) => {
     const folderPath = parentPath

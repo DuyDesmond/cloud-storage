@@ -5,6 +5,7 @@ import { Landing } from './features/landing/landing';
 import { Drive } from './features/drive/drive';
 import { UserProfile } from './features/user-profile/user-profile';
 import { authGuard } from './core/auth/guards/auth.guard';
+import { Trash } from './features/trash/trash';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'landing', pathMatch: 'full' },
@@ -13,5 +14,6 @@ export const routes: Routes = [
   { path: 'register', component: Register },
   { path: 'drive', component: Drive, canActivate: [authGuard] },
   { path: 'profile', component: UserProfile, canActivate: [authGuard] },
+  { path: 'trash', component: Trash, canActivate: [authGuard] },
   { path: '**', redirectTo: 'landing' },
 ];

@@ -1,5 +1,10 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpEvent, HttpHeaders } from '@angular/common/http';
+import {
+  HttpClient,
+  HttpEvent,
+  HttpHeaders,
+  HttpParams,
+} from '@angular/common/http';
 import { forkJoin, Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { FILE_OPERATION_ENDPOINTS } from '../endpoints/file-operation-endpoints';
@@ -8,6 +13,7 @@ import {
   DriveFolderItem,
   DriveItem,
 } from '../../../shared/components/drive-item-card/drive-item.model';
+import { StorageContentResponse } from '../../../features/drive/drive';
 
 export interface BackendFileResponse {
   id: string;
@@ -147,74 +153,144 @@ export class FileOperationsService {
     };
   }
 
+  getStorageContents(
+    parentFolderId?: string | null,
+  ): Observable<StorageContentResponse> {
+    let params = new HttpParams();
+    if (parentFolderId) {
+      params = params.set('parent_folder_id', parentFolderId);
+    }
+
+    return this.http.get<StorageContentResponse>(
+      FILE_OPERATION_ENDPOINTS.getStorage,
+      { params, withCredentials: true },
+    );
+  }
+
+  getTrashedContents(): Observable<DriveItem[]> {
+    return this.http
+      .get<{ folders: BackendFolderResponse[]; files: BackendFileResponse[] }>(
+        FILE_OPERATION_ENDPOINTS.getTrashed,
+        { withCredentials: true },
+      )
+      .pipe(
+        map((res) => {
+          const folders = (res.folders || []).map((f) => this.toDriveFolder(f));
+          const files = (res.files || []).map((f) => this.toDriveFile(f));
+          return [...folders, ...files];
+        }),
+      );
+  }
+
+  restoreFile(fileId: string) {
+    return this.http
+      .post<BackendFileResponse>(
+        FILE_OPERATION_ENDPOINTS.restoreFile(fileId),
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map((r) => this.toDriveFile(r)));
+  }
+
+  restoreFolder(folderId: string) {
+    return this.http
+      .post<BackendFolderResponse>(
+        FILE_OPERATION_ENDPOINTS.restoreFolder(folderId),
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map((r) => this.toDriveFolder(r)));
+  }
+
+  hardDeleteFile(fileId: string) {
+    return this.http.delete<{ message: string }>(
+      FILE_OPERATION_ENDPOINTS.hardDeleteFile(fileId),
+      { withCredentials: true },
+    );
+  }
+
+  hardDeleteFolder(folderId: string) {
+    return this.http.delete<{ message: string }>(
+      FILE_OPERATION_ENDPOINTS.hardDeleteFolder(folderId),
+      { withCredentials: true },
+    );
+  }
+
+  emptyTrash() {
+    return this.http.delete<{ message: string }>(
+      FILE_OPERATION_ENDPOINTS.emptyTrash,
+      { withCredentials: true },
+    );
+  }
+
   requestPresignedUpload(
-    payload: PresignedUploadRequestPayload
+    payload: PresignedUploadRequestPayload,
   ): Observable<PresignedUploadResponsePayload> {
     return this.http.post<PresignedUploadResponsePayload>(
       FILE_OPERATION_ENDPOINTS.uploadPresign,
       payload,
-      { withCredentials: true }
+      { withCredentials: true },
     );
   }
 
   completeDirectUpload(
-    payload: CompleteUploadRequestPayload
+    payload: CompleteUploadRequestPayload,
   ): Observable<DriveFileItem> {
     return this.http
       .post<BackendFileResponse>(
         FILE_OPERATION_ENDPOINTS.uploadComplete,
         payload,
-        { withCredentials: true }
+        { withCredentials: true },
       )
       .pipe(map((res) => this.toDriveFile(res)));
   }
 
   initiateMultipartUpload(
-    payload: InitiateMultipartUploadRequestPayload
+    payload: InitiateMultipartUploadRequestPayload,
   ): Observable<InitiateMultipartUploadResponsePayload> {
     return this.http.post<InitiateMultipartUploadResponsePayload>(
       FILE_OPERATION_ENDPOINTS.multipartInitiate,
       payload,
-      { withCredentials: true }
+      { withCredentials: true },
     );
   }
 
   presignMultipartPart(
-    payload: PresignPartRequestPayload
+    payload: PresignPartRequestPayload,
   ): Observable<PresignPartResponsePayload> {
     return this.http.post<PresignPartResponsePayload>(
       FILE_OPERATION_ENDPOINTS.multipartPresignPart,
       payload,
-      { withCredentials: true }
+      { withCredentials: true },
     );
   }
 
   completeMultipartUpload(
-    payload: CompleteMultipartUploadRequestPayload
+    payload: CompleteMultipartUploadRequestPayload,
   ): Observable<DriveFileItem> {
     return this.http
       .post<BackendFileResponse>(
         FILE_OPERATION_ENDPOINTS.multipartComplete,
         payload,
-        { withCredentials: true }
+        { withCredentials: true },
       )
       .pipe(map((res) => this.toDriveFile(res)));
   }
 
   abortMultipartUpload(
-    payload: AbortMultipartUploadRequestPayload
+    payload: AbortMultipartUploadRequestPayload,
   ): Observable<{ message: string }> {
     return this.http.post<{ message: string }>(
       FILE_OPERATION_ENDPOINTS.multipartAbort,
       payload,
-      { withCredentials: true }
+      { withCredentials: true },
     );
   }
 
   uploadBinaryToUrl(
     url: string,
     blob: Blob,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
   ): Observable<HttpEvent<any>> {
     let httpHeaders = new HttpHeaders();
     if (headers) {
@@ -222,7 +298,7 @@ export class FileOperationsService {
         httpHeaders = httpHeaders.set(k, headers[k]);
       });
     }
-
+    console.log('[upload] signed-url request', { method: 'PUT', url, headers });
     return this.http.request('PUT', url, {
       body: blob,
       headers: httpHeaders,
@@ -239,15 +315,19 @@ export class FileOperationsService {
     }
 
     return this.http
-      .post<BackendFileResponse>(FILE_OPERATION_ENDPOINTS.uploadFiles, formData, {
-        withCredentials: true,
-      })
+      .post<BackendFileResponse>(
+        FILE_OPERATION_ENDPOINTS.uploadFiles,
+        formData,
+        {
+          withCredentials: true,
+        },
+      )
       .pipe(map((payload) => this.toDriveFile(payload)));
   }
 
   uploadFiles(
     files: File[],
-    parentFolderId?: string
+    parentFolderId?: string,
   ): Observable<DriveFileItem[]> {
     if (files.length === 0) {
       return of([]);
@@ -265,20 +345,20 @@ export class FileOperationsService {
   trashFile(fileId: string): Observable<{ message: string }> {
     return this.http.delete<{ message: string }>(
       FILE_OPERATION_ENDPOINTS.trashFile(fileId),
-      { withCredentials: true }
+      { withCredentials: true },
     );
   }
 
   trashFolder(folderId: string): Observable<{ message: string }> {
     return this.http.delete<{ message: string }>(
       FILE_OPERATION_ENDPOINTS.trashFolder(folderId),
-      { withCredentials: true }
+      { withCredentials: true },
     );
   }
 
   createFolder(
     folderName: string,
-    parentFolderId?: string
+    parentFolderId?: string,
   ): Observable<DriveFolderItem> {
     return this.http
       .post<BackendFolderResponse>(
@@ -287,7 +367,7 @@ export class FileOperationsService {
           folder_name: folderName,
           parent_folder_id: parentFolderId ?? null,
         },
-        { withCredentials: true }
+        { withCredentials: true },
       )
       .pipe(map((result) => this.toDriveFolder(result)));
   }

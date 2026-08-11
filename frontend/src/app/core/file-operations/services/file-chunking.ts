@@ -2,7 +2,7 @@
  * Helper utilities for client-side file chunking, hashing, and filename sanitization.
  */
 
-export const MULTIPART_THRESHOLD_BYTES = 100 * 1024 * 1024; // 100 MB
+export const MULTIPART_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50 MB
 export const CHUNK_SIZE_BYTES = 8 * 1024 * 1024; // 8 MB
 
 export function sanitizeFilename(filename: string): string {

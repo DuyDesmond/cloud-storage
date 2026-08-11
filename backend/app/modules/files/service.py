@@ -94,9 +94,11 @@ class R2StorageGateway:
                 Bucket=self.bucket_name,
                 Key=object_name,
             )
-        except ClientError:
-            # Silence deletion exceptions to avoid masking primary application errors
-            pass
+        except ClientError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to delete object from Cloudflare R2.",
+            ) from exc
 
     async def generate_presigned_put_url(
         self,
@@ -394,9 +396,32 @@ class FileOperationsService:
 
         async def _do_create():
             await self.repo.call_lock_naming_scope(conn, payload.parent_folder_id, current_user["id"])
-            final_name = await self.repo.resolve_file_name_collision(
-                conn, payload.parent_folder_id, current_user["id"], clean_name
-            )
+
+            final_name = clean_name
+            if await self.repo.file_exists_by_name(
+                conn,
+                payload.parent_folder_id,
+                current_user["id"],
+                clean_name,
+            ):
+                final_name = await self.repo.resolve_file_name_collision(
+                    conn,
+                    payload.parent_folder_id,
+                    current_user["id"],
+                    clean_name,
+                )
+
+            # file_exists = await self.repo.file_exists_by_name(
+            #     conn, payload.parent_folder_id, current_user["id"], clean_name
+            # )
+
+            # if file_exists:
+            #     final_name = await self.repo.resolve_file_name_collision(
+            #         conn, payload.parent_folder_id, current_user["id"], clean_name
+            #     )
+            # else:
+            #     final_name = clean_name
+
             file_id = uuid.uuid4()
             row = await self.repo.create_file(
                 conn,
@@ -490,9 +515,32 @@ class FileOperationsService:
 
         async def _do_create():
             await self.repo.call_lock_naming_scope(conn, payload.parent_folder_id, current_user["id"])
-            final_name = await self.repo.resolve_file_name_collision(
-                conn, payload.parent_folder_id, current_user["id"], clean_name
-            )
+
+            final_name = clean_name
+            if await self.repo.file_exists_by_name(
+                conn,
+                payload.parent_folder_id,
+                current_user["id"],
+                clean_name,
+            ):
+                final_name = await self.repo.resolve_file_name_collision(
+                    conn,
+                    payload.parent_folder_id,
+                    current_user["id"],
+                    clean_name,
+                )
+
+            # file_exists = await self.repo.file_exists_by_name(
+            #     conn, payload.parent_folder_id, current_user["id"], clean_name
+            # )
+
+            # if file_exists:
+            #     final_name = await self.repo.resolve_file_name_collision(
+            #         conn, payload.parent_folder_id, current_user["id"], clean_name
+            #     )
+            # else:
+            #     final_name = clean_name
+
             file_id = uuid.uuid4()
             row = await self.repo.create_file(
                 conn,
@@ -1217,3 +1265,37 @@ class FileOperationsService:
         headers["Content-Disposition"] = f'attachment; filename="{file_row.get("file_name")}"'
 
         return StreamingResponse(stream_generator(), status_code=status_code, media_type=media_type, headers=headers)
+
+    async def get_storage_contents(
+        self,
+        conn: asyncpg.Connection,
+        current_user: dict[str, Any],
+        parent_folder_id: uuid.UUID | None = None,
+    ) -> schemas.StorageContentResponse:
+        if parent_folder_id:
+            await self._require_view_access(
+                conn, target_type="folder", target_id=parent_folder_id, current_user_id=current_user["id"]
+            )
+
+        folders_raw = await self.repo.list_user_folders(conn, current_user["id"], parent_folder_id)
+        files_raw = await self.repo.list_user_files(conn, current_user["id"], parent_folder_id)
+
+        return schemas.StorageContentResponse(
+            folders=[self._as_folder_response(f) for f in folders_raw],
+            files=[self._as_file_response(f) for f in files_raw],
+        )
+
+    async def get_trashed_contents(
+        self,
+        conn: asyncpg.Connection,
+        current_user: dict[str, Any],
+    ) -> schemas.StorageContentResponse:
+        """Return trashed folders and files owned by the current user."""
+        owner_id = current_user["id"]
+        folders_raw = await self.repo.list_trashed_folders_by_owner(conn, owner_id)
+        files_raw = await self.repo.list_trashed_files_by_owner(conn, owner_id)
+
+        return schemas.StorageContentResponse(
+            folders=[self._as_folder_response(f) for f in folders_raw],
+            files=[self._as_file_response(f) for f in files_raw],
+        )

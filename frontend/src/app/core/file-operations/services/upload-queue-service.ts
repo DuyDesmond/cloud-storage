@@ -6,7 +6,7 @@ import {
   PresignedUploadResponsePayload,
   InitiateMultipartUploadResponsePayload,
   PresignPartResponsePayload,
-} from './file-operations-services';
+} from './file-operations.services';
 import { DriveFileItem } from '../../../shared/components/drive-item-card/drive-item.model';
 import {
   CHUNK_SIZE_BYTES,
@@ -16,12 +16,7 @@ import {
 } from './file-chunking';
 
 export type UploadStatus =
-  | 'queued'
-  | 'uploading'
-  | 'paused'
-  | 'completed'
-  | 'error'
-  | 'cancelled';
+  'queued' | 'uploading' | 'paused' | 'completed' | 'error' | 'cancelled';
 
 export interface UploadQueueItem {
   id: string;
@@ -59,13 +54,13 @@ export class UploadQueueService {
   onFileUploaded = new Subject<DriveFileItem>();
 
   activeUploadsCount = computed(
-    () => this.queue().filter((item) => item.status === 'uploading').length
+    () => this.queue().filter((item) => item.status === 'uploading').length,
   );
 
   hasActiveOrQueued = computed(() =>
     this.queue().some(
-      (item) => item.status === 'uploading' || item.status === 'queued'
-    )
+      (item) => item.status === 'uploading' || item.status === 'queued',
+    ),
   );
 
   totalProgressPercentage = computed(() => {
@@ -75,7 +70,7 @@ export class UploadQueueService {
     if (totalBytes === 0) return 100;
     const uploadedBytes = items.reduce(
       (sum, item) => sum + item.uploadedBytes,
-      0
+      0,
     );
     return Math.min(100, Math.round((uploadedBytes / totalBytes) * 100));
   });
@@ -110,7 +105,7 @@ export class UploadQueueService {
           return { ...item, status: 'paused' as UploadStatus };
         }
         return item;
-      })
+      }),
     );
     this.processQueue();
   }
@@ -118,11 +113,18 @@ export class UploadQueueService {
   resumeUpload(id: string): void {
     this.queue.update((items) =>
       items.map((item) => {
-        if (item.id === id && (item.status === 'paused' || item.status === 'error')) {
-          return { ...item, status: 'queued' as UploadStatus, errorMessage: undefined };
+        if (
+          item.id === id &&
+          (item.status === 'paused' || item.status === 'error')
+        ) {
+          return {
+            ...item,
+            status: 'queued' as UploadStatus,
+            errorMessage: undefined,
+          };
         }
         return item;
-      })
+      }),
     );
     this.processQueue();
   }
@@ -152,8 +154,8 @@ export class UploadQueueService {
       } else if (item.status === 'queued') {
         this.queue.update((items) =>
           items.map((i) =>
-            i.id === item.id ? { ...i, status: 'paused' as UploadStatus } : i
-          )
+            i.id === item.id ? { ...i, status: 'paused' as UploadStatus } : i,
+          ),
         );
       }
     });
@@ -164,8 +166,8 @@ export class UploadQueueService {
       items.map((i) =>
         i.status === 'paused' || i.status === 'error'
           ? { ...i, status: 'queued' as UploadStatus, errorMessage: undefined }
-          : i
-      )
+          : i,
+      ),
     );
     this.processQueue();
   }
@@ -176,8 +178,8 @@ export class UploadQueueService {
         (i) =>
           i.status === 'uploading' ||
           i.status === 'queued' ||
-          i.status === 'paused'
-      )
+          i.status === 'paused',
+      ),
     );
   }
 
@@ -226,32 +228,33 @@ export class UploadQueueService {
   }
 
   private async uploadSingleFile(item: UploadQueueItem): Promise<void> {
-    // 1. Request presigned PUT URL with retry
-    const presignRes: PresignedUploadResponsePayload = await this.retryWithBackoff(
-      () =>
+    const presignRes: PresignedUploadResponsePayload =
+      await this.retryWithBackoff(() =>
         firstValueFrom(
           this.fileService.requestPresignedUpload({
             file_name: item.name,
             size_bytes: item.sizeBytes,
             mime_type: item.file.type || 'application/octet-stream',
             parent_folder_id: item.parentFolderId ?? null,
-          })
-        )
-    );
+          }),
+        ),
+      );
 
-    // 2. Binary upload via HTTP PUT with progress tracking
     await new Promise<void>((resolve, reject) => {
       const sub = this.fileService
         .uploadBinaryToUrl(
           presignRes.presigned_url,
           item.file,
-          presignRes.headers
+          presignRes.headers,
         )
         .subscribe({
           next: (event: any) => {
-            if (event.type === HttpEventType.UploadProgress && event.total) {
-              this.calculateProgress(item.id, event.loaded, event.total);
+            //  Removed '&& event.total' check; fallback to item.sizeBytes
+            if (event.type === HttpEventType.UploadProgress) {
+              const total = event.total || item.sizeBytes;
+              this.calculateProgress(item.id, event.loaded, total);
             } else if (event.type === HttpEventType.Response) {
+              this.calculateProgress(item.id, item.sizeBytes, item.sizeBytes);
               resolve();
             }
           },
@@ -261,7 +264,6 @@ export class UploadQueueService {
       this.updateItemState(item.id, { subscription: sub });
     });
 
-    // 3. Complete direct upload metadata registration
     const driveItem = await this.retryWithBackoff(() =>
       firstValueFrom(
         this.fileService.completeDirectUpload({
@@ -270,8 +272,8 @@ export class UploadQueueService {
           size_bytes: item.sizeBytes,
           mime_type: item.file.type || null,
           parent_folder_id: item.parentFolderId ?? null,
-        })
-      )
+        }),
+      ),
     );
 
     this.updateItemState(item.id, {
@@ -288,7 +290,6 @@ export class UploadQueueService {
   }
 
   private async uploadMultipartFile(item: UploadQueueItem): Promise<void> {
-    // Check if there is saved resume state
     let resumeState = this.getResumeState(item.file);
     let uploadId: string;
     let storageKey: string;
@@ -307,30 +308,22 @@ export class UploadQueueService {
               size_bytes: item.sizeBytes,
               mime_type: item.file.type || 'application/octet-stream',
               parent_folder_id: item.parentFolderId ?? null,
-            })
-          )
+            }),
+          ),
         );
       uploadId = initRes.upload_id;
       storageKey = initRes.storage_key;
       this.saveResumeState(item.file, uploadId, storageKey, []);
     }
 
-    this.updateItemState(item.id, {
-      uploadId,
-      storageKey,
-      completedParts,
-    });
+    this.updateItemState(item.id, { uploadId, storageKey, completedParts });
 
     const totalParts = Math.ceil(item.sizeBytes / CHUNK_SIZE_BYTES);
 
     for (let partNum = 1; partNum <= totalParts; partNum++) {
-      // Check if paused or cancelled
       const currentItem = this.queue().find((i) => i.id === item.id);
-      if (!currentItem || currentItem.status !== 'uploading') {
-        return; // Stopped by user
-      }
+      if (!currentItem || currentItem.status !== 'uploading') return;
 
-      // Check if part is already uploaded
       const existing = completedParts.find((p) => p.part_number === partNum);
       if (existing) {
         const loaded = Math.min(partNum * CHUNK_SIZE_BYTES, item.sizeBytes);
@@ -338,12 +331,10 @@ export class UploadQueueService {
         continue;
       }
 
-      // Slice chunk
       const start = (partNum - 1) * CHUNK_SIZE_BYTES;
       const end = Math.min(start + CHUNK_SIZE_BYTES, item.sizeBytes);
       const chunk = sliceFile(item.file, start, end);
 
-      // Presign Part URL
       const presignPartRes: PresignPartResponsePayload =
         await this.retryWithBackoff(() =>
           firstValueFrom(
@@ -351,24 +342,28 @@ export class UploadQueueService {
               upload_id: uploadId,
               storage_key: storageKey,
               part_number: partNum,
-            })
-          )
+            }),
+          ),
         );
 
-      // Upload Chunk
       let partETag = '';
       await new Promise<void>((resolve, reject) => {
         const sub = this.fileService
           .uploadBinaryToUrl(presignPartRes.presigned_url, chunk)
           .subscribe({
             next: (event: any) => {
-              if (event.type === HttpEventType.UploadProgress && event.total) {
+              //  Fallback to item.sizeBytes if event.total is omitted
+              if (event.type === HttpEventType.UploadProgress) {
                 const totalLoaded = start + event.loaded;
                 this.calculateProgress(item.id, totalLoaded, item.sizeBytes);
               } else if (event.type === HttpEventType.Response) {
-                // Extract ETag header or compute fallback
-                const etagHeader = event.headers.get('ETag') || event.headers.get('etag');
-                partETag = etagHeader ? etagHeader.replace(/"/g, '') : `etag_part_${partNum}`;
+                const etagHeader =
+                  event.headers.get('ETag') || event.headers.get('etag');
+                partETag = etagHeader
+                  ? etagHeader.replace(/"/g, '')
+                  : `etag_part_${partNum}`;
+                const loadedNow = Math.min(end, item.sizeBytes);
+                this.calculateProgress(item.id, loadedNow, item.sizeBytes);
                 resolve();
               }
             },
@@ -382,7 +377,6 @@ export class UploadQueueService {
       this.saveResumeState(item.file, uploadId, storageKey, completedParts);
     }
 
-    // Complete Multipart Upload
     const driveItem = await this.retryWithBackoff(() =>
       firstValueFrom(
         this.fileService.completeMultipartUpload({
@@ -393,8 +387,8 @@ export class UploadQueueService {
           size_bytes: item.sizeBytes,
           mime_type: item.file.type || null,
           parent_folder_id: item.parentFolderId ?? null,
-        })
-      )
+        }),
+      ),
     );
 
     this.clearResumeState(item.file);
@@ -417,40 +411,47 @@ export class UploadQueueService {
     if (!item) return;
 
     const now = Date.now();
-    const timeDiffSec = (now - (item.lastTimestamp || now)) / 1000;
+    const lastTime = item.lastTimestamp || now;
+    const timeDiffSec = (now - lastTime) / 1000;
+
     let speed = item.speedBytesPerSec;
 
-    if (timeDiffSec >= 0.5) {
+    if (timeDiffSec >= 0.2) {
       const bytesDiff = loaded - (item.lastLoadedBytes || 0);
       const instantSpeed = bytesDiff / timeDiffSec;
-      // Exponential moving average for smooth speed calculation
       speed = speed === 0 ? instantSpeed : speed * 0.7 + instantSpeed * 0.3;
-      item.lastTimestamp = now;
-      item.lastLoadedBytes = loaded;
     }
 
     const remainingBytes = Math.max(0, total - loaded);
     const etaSeconds = speed > 0 ? Math.ceil(remainingBytes / speed) : 0;
-    const progressPercentage = Math.min(100, Math.round((loaded / total) * 100));
+    const progressPercentage = Math.min(
+      100,
+      Math.round((loaded / total) * 100),
+    );
 
     this.updateItemState(id, {
       uploadedBytes: loaded,
       progressPercentage,
       speedBytesPerSec: Math.max(0, speed),
       etaSeconds,
+      lastTimestamp: now,
+      lastLoadedBytes: loaded,
     });
   }
 
-  private updateItemState(id: string, patchItem: Partial<UploadQueueItem>): void {
+  private updateItemState(
+    id: string,
+    patchItem: Partial<UploadQueueItem>,
+  ): void {
     this.queue.update((items) =>
-      items.map((i) => (i.id === id ? { ...i, ...patchItem } : i))
+      items.map((i) => (i.id === id ? { ...i, ...patchItem } : i)),
     );
   }
 
   private async retryWithBackoff<T>(
     fn: () => Promise<T>,
     maxRetries = 3,
-    delayMs = 1000
+    delayMs = 1000,
   ): Promise<T> {
     let attempt = 0;
     while (true) {
@@ -461,7 +462,9 @@ export class UploadQueueService {
         if (attempt >= maxRetries) {
           throw err;
         }
-        await new Promise((res) => setTimeout(res, delayMs * Math.pow(2, attempt - 1)));
+        await new Promise((res) =>
+          setTimeout(res, delayMs * Math.pow(2, attempt - 1)),
+        );
       }
     }
   }
@@ -484,13 +487,13 @@ export class UploadQueueService {
     file: File,
     uploadId: string,
     storageKey: string,
-    completedParts: { part_number: number; etag: string }[]
+    completedParts: { part_number: number; etag: string }[],
   ): void {
     try {
       const key = `${LOCAL_STORAGE_PREFIX}${file.name}_${file.size}`;
       localStorage.setItem(
         key,
-        JSON.stringify({ uploadId, storageKey, completedParts })
+        JSON.stringify({ uploadId, storageKey, completedParts }),
       );
     } catch {}
   }
