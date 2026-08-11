@@ -27,4 +27,5 @@ export const FILE_OPERATION_ENDPOINTS = {
   hardDeleteFolder: (folderID: string) =>
     `${environment.apiUrl}/api/v1/storage/trash/folders/${folderID}`,
   emptyTrash: `${environment.apiUrl}/api/v1/storage/trash/empty`,
+  storageUsage: `${environment.apiUrl}/api/v1/storage/usage`,
 };

@@ -1266,6 +1266,16 @@ class FileOperationsService:
 
         return StreamingResponse(stream_generator(), status_code=status_code, media_type=media_type, headers=headers)
 
+    async def get_storage_usage(
+        self,
+        conn: asyncpg.Connection,
+        current_user: dict[str, Any],
+    ) -> schemas.StorageUsageResponse:
+        used = await self.repo.get_storage_usage(conn, current_user["id"])
+        total = getattr(settings, "STORAGE_QUOTA_BYTES", 20 * 1024 ** 3)
+        return schemas.StorageUsageResponse(used_bytes=used, total_bytes=total)
+
+
     async def get_storage_contents(
         self,
         conn: asyncpg.Connection,

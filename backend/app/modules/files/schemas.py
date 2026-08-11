@@ -13,6 +13,12 @@ class StorageContentResponse(BaseModel):
     folders: list[FolderResponse]
     files: list[FileResponse]
 
+
+class StorageUsageResponse(BaseModel):
+    used_bytes: int
+    total_bytes: int  # e.g. quota from a config or users table
+
+
 class FolderCreateRequest(BaseModel):
     folder_name: str = Field(min_length=1, max_length=255)
     parent_folder_id: uuid.UUID | None = None

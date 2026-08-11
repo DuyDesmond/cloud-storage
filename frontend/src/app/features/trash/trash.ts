@@ -14,6 +14,14 @@ import {
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
 import { UploadWidget } from '../upload-widget/upload-widget';
 import { DriveItemCard } from '../../shared/components/drive-item-card/drive-item-card';
+import {
+  UploadDialog,
+  UploadDialogResult,
+} from '../upload-dialog/upload-dialog';
+import { MatDialog } from '@angular/material/dialog';
+import { UploadQueueService } from '@core/file-operations/services/upload-queue-service';
+import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
+import { firstValueFrom, Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-trash',
@@ -41,13 +49,19 @@ export class Trash {
   isLoading = signal<boolean>(false);
   isSidebarCollapsed = signal<boolean>(false);
   currentNav = signal<SidePanelNavKey>('trash');
-  usedStorage = signal<number>(5);
-  totalStorage = signal<number>(20);
+  usedBytes = signal<number>(0);
+  totalBytes = signal<number>(20 * 1024 ** 3);
+  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
+  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   items = signal<DriveItem[]>([]);
   hasItems = computed(() => this.items().length > 0);
+  private dialog = inject(MatDialog);
+  public uploadQueueService = inject(UploadQueueService);
+
   ngOnInit(): void {
     this.loadTrashedItems();
+    this.fetchStorageUsage();
   }
 
   loadTrashedItems(): void {
@@ -64,6 +78,15 @@ export class Trash {
           duration: 3000,
         });
         this.isLoading.set(false);
+      },
+    });
+  }
+
+  fetchStorageUsage(): void {
+    this.fileService.getStorageUsage().subscribe({
+      next: ({ used_bytes, total_bytes }) => {
+        this.usedBytes.set(used_bytes);
+        this.totalBytes.set(total_bytes);
       },
     });
   }
@@ -86,6 +109,7 @@ export class Trash {
           duration: 3000,
         }),
     });
+    this.fetchStorageUsage();
   }
 
   onPermanentDeleteItem(item: DriveItem): void {
@@ -111,6 +135,7 @@ export class Trash {
           duration: 3000,
         }),
     });
+    this.fetchStorageUsage();
   }
 
   onEmptyTrash(): void {
@@ -138,6 +163,7 @@ export class Trash {
         });
       },
     });
+    this.fetchStorageUsage();
   }
 
   switchNav(nav: SidePanelNavKey) {
@@ -149,6 +175,73 @@ export class Trash {
   }
 
   onUploadTrigger(): void {
-    // Triggers upload modal if initiated from navigation
+    const dialogRef = this.dialog.open(UploadDialog, {
+      width: '500px',
+      disableClose: false,
+    });
+
+    dialogRef
+      .afterClosed()
+      .subscribe((result: UploadDialogResult | undefined) => {
+        if (!result) return;
+
+        if (result.action === 'upload') {
+          if (result.files?.length) {
+            this.uploadFiles(result.files);
+          }
+          if (result.traversedFolders?.length) {
+            this.uploadFolderTree(result.traversedFolders);
+          }
+        } else if (result.action === 'create-folder' && result.folderName) {
+          this.createFolder(result.folderName);
+        }
+      });
+    this.fetchStorageUsage();
+  }
+
+  private uploadFiles(files: File[], parentFolderId?: string): void {
+    if (files.length === 0) return;
+    this.uploadQueueService.enqueueFiles(files, parentFolderId);
+    this.fetchStorageUsage();
+  }
+
+  private async uploadFolderTree(
+    folders: TraversedFolderItem[],
+    parentFolderId?: string,
+  ): Promise<void> {
+    for (const folder of folders) {
+      try {
+        const createdFolder = await firstValueFrom(
+          this.fileService.createFolder(folder.name, parentFolderId),
+        );
+        this.items.update((current) => [createdFolder, ...current]);
+
+        if (folder.files.length > 0) {
+          const files = folder.files.map((tf) => tf.file);
+          this.uploadFiles(files, createdFolder.id);
+        }
+
+        if (folder.subfolders.length > 0) {
+          await this.uploadFolderTree(folder.subfolders, createdFolder.id);
+        }
+      } catch (err) {
+        console.error(`Failed to create folder ${folder.name}`, err);
+      }
+    }
+
+    this.fetchStorageUsage();
+  }
+
+  private createFolder(folderName: string): void {
+    this.fileService.createFolder(folderName).subscribe({
+      next: (folder) => {
+        this.items.update((current) => [folder, ...current]);
+      },
+      error: (error) => {
+        console.error('Create folder failed:', error);
+      },
+    });
+
+    this.fetchStorageUsage();
   }
 }

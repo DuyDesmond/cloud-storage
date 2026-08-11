@@ -1,5 +1,6 @@
 import {
   Component,
+  computed,
   EventEmitter,
   inject,
   input,
@@ -11,6 +12,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { Router } from '@angular/router';
+import { FileOperationsService } from '../../../core/file-operations/services/file-operations.services';
 
 type SidePanelNavKey = 'home' | 'recent' | 'starred' | 'trash' | '';
 
@@ -36,12 +38,16 @@ export interface SidePanelNavItem {
 })
 export class SidePanel {
   private router = inject(Router);
-  usedStorage = input(0);
-  totalStorage = input(1);
+  private fileService = inject(FileOperationsService);
   activeNav = input<SidePanelNavKey>('home');
   navChange = output<SidePanelNavKey>();
   upgrade = output<void>();
   upload = output<void>();
+
+  usedBytes = signal<number>(0);
+  totalBytes = signal<number>(20 * 1024 ** 3);
+  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
+  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   isCollapsed = signal<boolean>(false);
   collapsedChange = output<boolean>();
@@ -54,7 +60,7 @@ export class SidePanel {
   ];
 
   storagePercentage(): number {
-    return Math.round((this.usedStorage() / this.totalStorage()) * 100);
+    return Math.round((this.usedStorageGB() / this.totalStorageGB()) * 100);
   }
 
   toggleCollapse(): void {
@@ -64,5 +70,14 @@ export class SidePanel {
   onNavClick(item: SidePanelNavItem): void {
     this.navChange.emit(item.key);
     this.router.navigateByUrl(item.route);
+  }
+
+  fetchStorageUsage(): void {
+    this.fileService.getStorageUsage().subscribe({
+      next: ({ used_bytes, total_bytes }) => {
+        this.usedBytes.set(used_bytes);
+        this.totalBytes.set(total_bytes);
+      },
+    });
   }
 }

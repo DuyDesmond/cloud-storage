@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE: int
     REFRESH_TOKEN_EXPIRE: int
+    
+    STORAGE_QUOTA_BYTES: int
 
     # MinIO configuration for file storage
     MINIO_ENDPOINT: str | None = None

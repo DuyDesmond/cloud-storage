@@ -167,6 +167,13 @@ export class FileOperationsService {
     );
   }
 
+  getStorageUsage(): Observable<{ used_bytes: number; total_bytes: number }> {
+    return this.http.get<{ used_bytes: number; total_bytes: number }>(
+      FILE_OPERATION_ENDPOINTS.storageUsage,
+      { withCredentials: true }
+    );
+  }
+
   getTrashedContents(): Observable<DriveItem[]> {
     return this.http
       .get<{ folders: BackendFolderResponse[]; files: BackendFileResponse[] }>(

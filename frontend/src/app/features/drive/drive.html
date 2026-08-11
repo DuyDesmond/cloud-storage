@@ -3,8 +3,8 @@
 
   <div class="workspace-container">
     <app-side-panel
-      [usedStorage]="usedStorage()"
-      [totalStorage]="totalStorage()"
+      [usedBytes]="usedStorageGB()"
+      [totalBytes]="totalStorageGB()"
       [activeNav]="currentNav()"
       (navChange)="switchNav($any($event))"
       (upload)="onUploadTrigger()"

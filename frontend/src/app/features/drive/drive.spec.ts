@@ -36,8 +36,8 @@ describe('Drive', () => {
   });
 
   it('should compute the correct storage usage percentage profile', () => {
-    component.usedStorage.set(5);
-    component.totalStorage.set(20);
+    component.usedBytes.set(5);
+    component.totalBytes.set(20 * 1024 ** 3);
     // (5 / 20) * 100 = 25%
     expect(component.storagePercentage()).toBe(25);
   });

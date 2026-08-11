@@ -18,6 +18,9 @@ class FileOperationsRepository:
     def _row_to_dict(row: asyncpg.Record | None) -> Optional[dict[str, Any]]:
         return dict(row) if row else None
 
+    async def get_storage_usage(self, conn: AsyncConn, owner_id: uuid.UUID) -> int:
+        return await conn.fetchval(queries.GET_STORAGE_USAGE, owner_id) or 0
+
     async def get_folder_by_id(self, conn: AsyncConn, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
         row = await conn.fetchrow(queries.GET_FOLDER_BY_ID, folder_id)
         return self._row_to_dict(row)

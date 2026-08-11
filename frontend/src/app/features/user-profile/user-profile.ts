@@ -1,3 +1,4 @@
+import { FileOperationsService } from '../../core/file-operations/services/file-operations.services';
 import { Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -53,6 +54,7 @@ export type ActionKey =
 export class UserProfile {
   private authService = inject(AuthService);
   private router = inject(Router);
+  private fileService = inject(FileOperationsService);
 
   currentUser = this.authService.currentUser;
   userName = computed(() => this.currentUser()?.full_name ?? 'Guest User');
@@ -67,8 +69,10 @@ export class UserProfile {
     email: this.userEmail(),
   });
 
-  usedStorage = signal<number>(4.2);
-  totalStorage = signal<number>(15.0);
+  usedBytes = signal<number>(0);
+  totalBytes = signal<number>(20 * 1024 ** 3);
+  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
+  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   storageCategories = signal<StorageCategory[]>([
     {
@@ -130,6 +134,15 @@ export class UserProfile {
       isDanger: true,
     },
   ]);
+
+  fetchStorageUsage(): void {
+    this.fileService.getStorageUsage().subscribe({
+      next: ({ used_bytes, total_bytes }) => {
+        this.usedBytes.set(used_bytes);
+        this.totalBytes.set(total_bytes);
+      },
+    });
+  }
 
   // Triggered when user clicks the profile icon in app-dashboard-header
   onProfileHeaderClick(): void {

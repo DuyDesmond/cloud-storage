@@ -81,11 +81,14 @@ export interface StorageContentResponse {
   styleUrls: ['./drive.scss'],
 })
 export class Drive implements OnInit, OnDestroy {
-  usedStorage = signal<number>(5);
-  totalStorage = signal<number>(20);
   currentNav = signal<SidePanelNavKey>('home');
   isLoading = signal<boolean>(false);
   isSidebarCollapsed = signal<boolean>(false);
+
+  usedBytes = signal<number>(0);
+  totalBytes = signal<number>(20 * 1024 ** 3);
+  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
+  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   private dialog = inject(MatDialog);
   private fileService = inject(FileOperationsService);
@@ -128,6 +131,7 @@ export class Drive implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.fetchRootContents();
+    this.fetchStorageUsage();
 
     this.fileUploadedSub = this.uploadQueueService.onFileUploaded.subscribe(
       (newFileItem) => {
@@ -188,10 +192,19 @@ export class Drive implements OnInit, OnDestroy {
     });
   }
 
+  fetchStorageUsage(): void {
+    this.fileService.getStorageUsage().subscribe({
+      next: ({ used_bytes, total_bytes }) => {
+        this.usedBytes.set(used_bytes);
+        this.totalBytes.set(total_bytes);
+      },
+    });
+  }
+
   storagePercentage = computed(() => {
-    const total = this.totalStorage();
+    const total = this.totalStorageGB();
     if (!total) return 0;
-    return Math.min(100, Math.round((this.usedStorage() / total) * 100));
+    return Math.min(100, Math.round((this.usedStorageGB() / total) * 100));
   });
 
   switchNav(nav: SidePanelNavKey) {
@@ -220,11 +233,13 @@ export class Drive implements OnInit, OnDestroy {
           this.createFolder(result.folderName);
         }
       });
+    this.fetchStorageUsage();
   }
 
   private uploadFiles(files: File[], parentFolderId?: string): void {
     if (files.length === 0) return;
     this.uploadQueueService.enqueueFiles(files, parentFolderId);
+    this.fetchStorageUsage();
   }
 
   private async uploadFolderTree(
@@ -250,6 +265,8 @@ export class Drive implements OnInit, OnDestroy {
         console.error(`Failed to create folder ${folder.name}`, err);
       }
     }
+
+    this.fetchStorageUsage();
   }
 
   private createFolder(folderName: string): void {
@@ -261,6 +278,8 @@ export class Drive implements OnInit, OnDestroy {
         console.error('Create folder failed:', error);
       },
     });
+
+    this.fetchStorageUsage();
   }
 
   onOpenItem(item: DriveItem): void {
@@ -313,5 +332,6 @@ export class Drive implements OnInit, OnDestroy {
         },
       });
     }
+    this.fetchStorageUsage();
   }
 }

@@ -10,6 +10,11 @@ SELECT id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_
 FROM nephos.files
 WHERE id = $1
 """
+GET_STORAGE_USAGE = """
+SELECT COALESCE(SUM(size_bytes), 0)::BIGINT AS used_bytes
+FROM nephos.files
+WHERE owner_id = $1 AND is_trashed = FALSE
+"""
 
 CREATE_FOLDER = """
 INSERT INTO nephos.folders (owner_id, parent_folder_id, folder_name)

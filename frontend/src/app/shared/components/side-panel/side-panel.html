@@ -35,8 +35,8 @@
   <div class="storage-summary">
     <h2>Cloud Storage</h2>
     <p class="storage-text">
-      <span class="bold">{{ usedStorage() }} GB</span> of {{ totalStorage() }}
-      GB used
+      <span class="bold">{{ usedStorageGB().toFixed(2) }} GB</span> of {{
+      totalStorageGB().toFixed(2) }} GB used
     </p>
     <mat-progress-bar
       mode="determinate"

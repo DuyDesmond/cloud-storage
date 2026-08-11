@@ -3,8 +3,8 @@
 
   <div class="workspace-container">
     <app-side-panel
-      [usedStorage]="usedStorage()"
-      [totalStorage]="totalStorage()"
+      [usedBytes]="usedStorageGB()"
+      [totalBytes]="totalStorageGB()"
       [activeNav]="currentNav()"
       (navChange)="switchNav($any($event))"
       (upload)="onUploadTrigger()"
@@ -16,7 +16,7 @@
         <header class="section-header trash-header">
           <div>
             <h2>Trash</h2>
-            <p>Items in the trash will be permanently removed after 30 days.</p>
+            <p>Items in the trash will be permanently removed after 20 days.</p>
           </div>
 
           @if (hasItems()) {
