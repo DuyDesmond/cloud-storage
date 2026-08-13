@@ -6,8 +6,8 @@
   <div class="workspace-container">
     <!-- Side Panel handles storage & main file views -->
     <app-side-panel
-      [usedBytes]="usedBytes()"
-      [totalBytes]="totalBytes()"
+      [usedBytes]="usedStorageGB()"
+      [totalBytes]="totalStorageGB()"
       [activeNav]="activeSideNav()"
       (navChange)="switchNav($event)"
     ></app-side-panel>

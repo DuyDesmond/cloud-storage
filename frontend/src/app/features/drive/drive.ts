@@ -1,4 +1,4 @@
-import { FileOperationsService } from '../../core/file-operations/services/file-operations.services';
+import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
 import {
   Component,
   inject,

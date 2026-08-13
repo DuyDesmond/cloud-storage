@@ -1,0 +1,1650 @@
+-- ============================================================================
+-- NEPHOS SCHEMA -- v2.1
+-- Files, folders, and a single unified ACL table for all sharing
+-- (direct user shares + public links).
+--
+-- Changelog since v2.0:
+--   * Removed public-link expiry (expires_at) entirely -- sharing is now
+--     permanent until the owner manually revokes it. No more "expired but
+--     not revoked" edge case for the one-live-link partial indexes.
+--   * owner_id ... ON DELETE CASCADE on files/folders is now confirmed
+--     intentional: account deletion is permanent and irreversible, and
+--     wipes the user's entire storage. App layer is responsible for
+--     deleting the corresponding object-storage blobs (see section 16).
+--   * Ownership is now immutable -- there is no transfer flow. Enforced by
+--     trigger (section 17), not just by omission.
+--   * Added nephos.lock_naming_scope(): a transaction-scoped advisory lock
+--     that all name-collision resolution (upload, restore, move, merge)
+--     takes before checking/mutating, closing a race condition where two
+--     concurrent operations could both pass a NOT EXISTS check before
+--     either commits.
+--   * Added nephos.resolve_file_name_collision(): shared "keep both" (n)
+--     suffix resolver for uploads, single-file moves, and per-file merge
+--     decisions. Added nephos.resolve_folder_name_collision(): same idea
+--     for folder move "keep duplicate".
+--   * Added folder-move semantics: nephos.move_folder() with an explicit
+--     p_on_collision mode ('merge' | 'keep_duplicate'), backed by
+--     nephos.merge_folder_contents() (recursive subtree merge, with
+--     'keep_both' / 'replace' / 'per_file' file-collision modes) and
+--     nephos.preview_merge_file_collisions() (read-only collision preview
+--     for the app to build a per-file decision UI before executing).
+--   * Deleted a duplicate/incomplete acl_entries block that had been left
+--     at the end of the v2.0 draft (stray CREATE TABLE without IF NOT
+--     EXISTS, a validate_acl_entry() body containing a literal "...", and
+--     a trigger CREATE with no DROP IF EXISTS guard -- none of it usable).
+-- ============================================================================
+
+-- CREATE SCHEMA IF NOT EXISTS nephos;
+-- SET search_path TO nephos, public;
+
+-- ============================================================================
+-- EXTENSIONS & TYPES
+-- ============================================================================
+CREATE EXTENSION IF NOT EXISTS "ltree";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- gen_random_uuid() is native in PG13+, keep for safety on older targets
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE t.typname = 'permission_level' AND n.nspname = 'nephos'
+    ) THEN
+        CREATE TYPE nephos.permission_level AS ENUM ('view', 'edit');
+    END IF;
+END $$;
+
+-- Order matters: MAX() in effective_permission() relies on this declared order
+-- ('edit' > 'view'). If you ever add a third level, insert it at the correct
+-- position, not just append it.
+
+
+-- ============================================================================
+-- 1. FOLDERS TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS nephos.folders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id UUID NOT NULL REFERENCES nephos.users(id) ON DELETE CASCADE,
+    parent_folder_id UUID REFERENCES nephos.folders(id) ON DELETE CASCADE,
+    path LTREE NOT NULL,
+    folder_name TEXT NOT NULL,
+    is_trashed BOOLEAN NOT NULL DEFAULT FALSE,
+    trashed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT check_folder_no_self_parent CHECK (id != parent_folder_id),
+    CONSTRAINT check_folder_name_length CHECK (char_length(folder_name) BETWEEN 1 AND 255),
+    CONSTRAINT check_folder_trash_state CHECK (
+        (is_trashed = FALSE AND trashed_at IS NULL) OR
+        (is_trashed = TRUE AND trashed_at IS NOT NULL)
+    )
+);
+
+-- owner_id CASCADE is intentional (see changelog): deleting a user account
+-- deletes their entire folder tree at the row level, permanently, with no
+-- trash grace period. The app layer MUST, as part of the account-deletion
+-- flow (not modeled here): (1) enumerate every file owned by the user and
+-- delete the corresponding object-storage blobs -- Postgres cascading rows
+-- away does not touch the bucket, since storage_key is app-managed; (2)
+-- consider warning the deleting user if other users hold live acl_entries
+-- grants on their files/folders, since those grants cascade away silently
+-- along with the rows (see section 3 comment).
+
+CREATE INDEX IF NOT EXISTS idx_folders_owner ON nephos.folders (owner_id);
+CREATE INDEX IF NOT EXISTS idx_folders_parent ON nephos.folders (parent_folder_id);
+CREATE INDEX IF NOT EXISTS idx_folders_path_gist ON nephos.folders USING GIST (path);
+CREATE INDEX IF NOT EXISTS idx_folders_trashed_at ON nephos.folders (trashed_at) WHERE is_trashed = TRUE;
+
+-- Folder names must be unique among active siblings (product rule: folders
+-- CANNOT share a name with another folder in the same parent, unlike files
+-- which are allowed to collide with a folder of the same name).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_folder_in_parent
+ON nephos.folders (parent_folder_id, folder_name)
+WHERE is_trashed = FALSE AND parent_folder_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_folder_in_root
+ON nephos.folders (owner_id, folder_name)
+WHERE is_trashed = FALSE AND parent_folder_id IS NULL;
+
+-- ============================================================================
+-- 2. FILES TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS nephos.files (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id UUID NOT NULL REFERENCES nephos.users(id) ON DELETE CASCADE,
+    parent_folder_id UUID REFERENCES nephos.folders(id) ON DELETE CASCADE,
+    path LTREE NOT NULL,
+    storage_key TEXT UNIQUE NOT NULL, -- Managed by app layer for object store pathing
+    file_name TEXT NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    mime_type TEXT,
+    content_hash CHAR(64), -- assumes SHA-256 hex; switch to BYTEA if you want raw storage + smaller index
+    is_trashed BOOLEAN NOT NULL DEFAULT FALSE,
+    trashed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT check_positive_size CHECK (size_bytes >= 0),
+    CONSTRAINT check_file_name_length CHECK (char_length(file_name) BETWEEN 1 AND 255),
+    CONSTRAINT check_file_trash_state CHECK (
+        (is_trashed = FALSE AND trashed_at IS NULL) OR
+        (is_trashed = TRUE AND trashed_at IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_owner ON nephos.files (owner_id);
+CREATE INDEX IF NOT EXISTS idx_files_parent ON nephos.files (parent_folder_id);
+CREATE INDEX IF NOT EXISTS idx_files_path_gist ON nephos.files USING GIST (path);
+CREATE INDEX IF NOT EXISTS idx_files_content_hash ON nephos.files (content_hash) WHERE content_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_files_trashed_at ON nephos.files (trashed_at) WHERE is_trashed = TRUE;
+
+-- Enforce unique active file names inside a folder (independent of uploader owner_id).
+-- Files are allowed to collide in name with a FOLDER (product rule); this only
+-- constrains file-vs-file.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_file_in_folder
+ON nephos.files (parent_folder_id, file_name)
+WHERE is_trashed = FALSE AND parent_folder_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_file_in_root
+ON nephos.files (owner_id, file_name)
+WHERE is_trashed = FALSE AND parent_folder_id IS NULL;
+
+-- These two unique indexes are the concurrency backstop for the "keep both -> suffix (n)"
+-- upload/move/merge flow: the app-facing functions take an advisory lock (section 8b)
+-- before checking, but the unique index remains as defense-in-depth regardless.
+
+-- ============================================================================
+-- 3. ACL ENTRIES -- single table for ALL sharing (direct user shares + public links)
+-- ============================================================================
+-- One row = one grant, on either a file or a folder, to either a specific user
+-- or "anyone with the link". Both principal types share one revoked_at column,
+-- which is what makes the "direct share survives a public link being revoked,
+-- and vice versa" product rule simple: each grant lives and dies independently,
+-- and effective_permission() takes the MAX across whatever is currently live --
+-- it never merges or mutates rows on write.
+--
+-- v2.1: expires_at has been removed. Sharing (both direct and public link) is
+-- permanent until the owner explicitly revokes it -- there is no automatic
+-- expiry concept anywhere in this schema anymore.
+--
+-- Note: when a file/folder's owner account is deleted (section 1), the row
+-- itself cascades away via file_id/folder_id ON DELETE CASCADE, taking any
+-- acl_entries grants on it with it -- other users lose access with no warning
+-- baked into the schema. That's accepted as a consequence of "account deletion
+-- is permanent and irreversible" (see section 1 comment).
+CREATE TABLE IF NOT EXISTS nephos.acl_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id UUID REFERENCES nephos.files(id) ON DELETE CASCADE,
+    folder_id UUID REFERENCES nephos.folders(id) ON DELETE CASCADE,
+    principal_type TEXT NOT NULL CHECK (principal_type IN ('user', 'public_link')),
+    grantee_id UUID REFERENCES nephos.users(id) ON DELETE CASCADE, -- set iff principal_type='user'
+    share_token TEXT UNIQUE,                                       -- set iff principal_type='public_link'
+    password_hash TEXT,                                            -- public_link only; NULL = no password
+    revoked_at TIMESTAMPTZ,                                        -- owner's manual revoke, either principal type
+    permission nephos.permission_level NOT NULL DEFAULT 'view',
+    created_by UUID REFERENCES nephos.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT check_acl_target CHECK (
+        (file_id IS NOT NULL AND folder_id IS NULL) OR
+        (file_id IS NULL AND folder_id IS NOT NULL)
+    ),
+    CONSTRAINT check_principal_shape CHECK (
+        (principal_type = 'user' AND grantee_id IS NOT NULL AND share_token IS NULL) OR
+        (principal_type = 'public_link' AND share_token IS NOT NULL AND grantee_id IS NULL)
+    ),
+    CONSTRAINT check_password_only_for_link CHECK (
+        principal_type = 'public_link' OR password_hash IS NULL
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_acl_grantee ON nephos.acl_entries (grantee_id)
+  WHERE principal_type = 'user' AND revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_acl_file ON nephos.acl_entries (file_id)
+  WHERE file_id IS NOT NULL AND revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_acl_folder ON nephos.acl_entries (folder_id)
+  WHERE folder_id IS NOT NULL AND revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_acl_share_token ON nephos.acl_entries (share_token)
+  WHERE share_token IS NOT NULL;
+
+-- A user can only have one LIVE grant per file/folder (re-sharing updates the
+-- existing row's permission rather than inserting a second one).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_user_file_grant
+  ON nephos.acl_entries (file_id, grantee_id)
+  WHERE principal_type = 'user' AND revoked_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_user_folder_grant
+  ON nephos.acl_entries (folder_id, grantee_id)
+  WHERE principal_type = 'user' AND revoked_at IS NULL;
+
+-- Only one LIVE public link per file/folder. Since expires_at is gone, "live"
+-- is now purely revoked_at IS NULL -- there's no separate expired-but-not-
+-- revoked state to worry about anymore.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_live_link_file
+  ON nephos.acl_entries (file_id)
+  WHERE principal_type = 'public_link' AND revoked_at IS NULL AND file_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_live_link_folder
+  ON nephos.acl_entries (folder_id)
+  WHERE principal_type = 'public_link' AND revoked_at IS NULL AND folder_id IS NOT NULL;
+
+-- ============================================================================
+-- 4. AUTOMATED TIMESTAMPS
+-- ============================================================================
+CREATE OR REPLACE FUNCTION nephos.touch_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_folders_updated ON nephos.folders;
+DROP TRIGGER IF EXISTS trg_files_updated ON nephos.files;
+DROP TRIGGER IF EXISTS trg_acl_entries_updated ON nephos.acl_entries;
+
+CREATE TRIGGER trg_folders_updated BEFORE UPDATE ON nephos.folders FOR EACH ROW EXECUTE FUNCTION nephos.touch_updated_at();
+CREATE TRIGGER trg_files_updated BEFORE UPDATE ON nephos.files FOR EACH ROW EXECUTE FUNCTION nephos.touch_updated_at();
+CREATE TRIGGER trg_acl_entries_updated BEFORE UPDATE ON nephos.acl_entries FOR EACH ROW EXECUTE FUNCTION nephos.touch_updated_at();
+
+-- ============================================================================
+-- 5. PATH LABEL HELPER
+-- ============================================================================
+-- Converts a UUID into a single ltree label (hyphens aren't valid in ltree labels).
+-- Shared by the INSERT-time path setter and the move (reparent) triggers below,
+-- so the label format only lives in one place.
+CREATE OR REPLACE FUNCTION nephos.uuid_ltree_label(p_id UUID)
+RETURNS LTREE AS $$
+    SELECT text2ltree(replace(p_id::text, '-', '_'));
+$$ LANGUAGE sql IMMUTABLE;
+
+-- ============================================================================
+-- 6. PATH ASSIGNMENT ON INSERT
+-- ============================================================================
+-- Computes `path` automatically on creation -- the app never supplies it directly.
+-- Root-level items get a single-label path from their own id; nested items get
+-- their parent's path plus their own id appended.
+CREATE OR REPLACE FUNCTION nephos.set_folder_path_on_insert()
+RETURNS TRIGGER AS $$
+DECLARE
+    parent_path LTREE;
+BEGIN
+    IF NEW.parent_folder_id IS NULL THEN
+        NEW.path := nephos.uuid_ltree_label(NEW.id);
+    ELSE
+        SELECT path INTO parent_path FROM nephos.folders WHERE id = NEW.parent_folder_id;
+        IF parent_path IS NULL THEN
+            RAISE EXCEPTION 'Parent folder % does not exist', NEW.parent_folder_id;
+        END IF;
+        NEW.path := parent_path || nephos.uuid_ltree_label(NEW.id);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_folder_path_on_insert ON nephos.folders;
+CREATE TRIGGER trg_set_folder_path_on_insert
+BEFORE INSERT ON nephos.folders
+FOR EACH ROW EXECUTE FUNCTION nephos.set_folder_path_on_insert();
+
+CREATE OR REPLACE FUNCTION nephos.set_file_path_on_insert()
+RETURNS TRIGGER AS $$
+DECLARE
+    parent_path LTREE;
+BEGIN
+    IF NEW.parent_folder_id IS NULL THEN
+        NEW.path := nephos.uuid_ltree_label(NEW.id);
+    ELSE
+        SELECT path INTO parent_path FROM nephos.folders WHERE id = NEW.parent_folder_id;
+        IF parent_path IS NULL THEN
+            RAISE EXCEPTION 'Parent folder % does not exist', NEW.parent_folder_id;
+        END IF;
+        NEW.path := parent_path || nephos.uuid_ltree_label(NEW.id);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_file_path_on_insert ON nephos.files;
+CREATE TRIGGER trg_set_file_path_on_insert
+BEFORE INSERT ON nephos.files
+FOR EACH ROW EXECUTE FUNCTION nephos.set_file_path_on_insert();
+
+-- NOTE: these fire BEFORE INSERT, so NEW.id is already populated (the id DEFAULT
+-- gen_random_uuid() resolves before triggers see the row) but NEW.path needs no
+-- default of its own -- the app should never set it directly on insert.
+
+-- ============================================================================
+-- 7. CYCLE PREVENTION ON FOLDER MOVE
+-- ============================================================================
+-- Prevents moving a folder into one of its own descendants (or itself). This
+-- also correctly blocks a merge target from being a descendant of the source:
+-- if it were, it would already be inside the subtree being emptied, so the
+-- destination row would not exist independently once the merge starts walking.
+CREATE OR REPLACE FUNCTION nephos.prevent_folder_cycle()
+RETURNS TRIGGER AS $$
+DECLARE
+    new_parent_path LTREE;
+BEGIN
+    IF NEW.parent_folder_id IS NULL OR NEW.parent_folder_id = OLD.parent_folder_id THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT path INTO new_parent_path FROM nephos.folders WHERE id = NEW.parent_folder_id;
+
+    IF new_parent_path IS NULL THEN
+        RAISE EXCEPTION 'Target parent folder % does not exist', NEW.parent_folder_id;
+    END IF;
+
+    IF new_parent_path <@ OLD.path THEN
+        RAISE EXCEPTION 'Cannot move folder % into its own descendant %', OLD.id, NEW.parent_folder_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_prevent_folder_cycle ON nephos.folders;
+CREATE TRIGGER trg_prevent_folder_cycle
+BEFORE UPDATE OF parent_folder_id ON nephos.folders
+FOR EACH ROW EXECUTE FUNCTION nephos.prevent_folder_cycle();
+
+-- ============================================================================
+-- 8. PATH MAINTENANCE ON MOVE
+-- ============================================================================
+-- Folders: recompute this folder's own path, then cascade the new prefix to every
+-- descendant folder/file. Runs AFTER UPDATE since it needs both OLD.path (to match
+-- descendants) and the already-applied NEW.path.
+CREATE OR REPLACE FUNCTION nephos.reparent_folder_path()
+RETURNS TRIGGER AS $$
+DECLARE
+    new_parent_path LTREE;
+    computed_path LTREE;
+BEGIN
+    IF NEW.parent_folder_id IS NOT DISTINCT FROM OLD.parent_folder_id THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.parent_folder_id IS NULL THEN
+        computed_path := nephos.uuid_ltree_label(NEW.id);
+    ELSE
+        SELECT path INTO new_parent_path FROM nephos.folders WHERE id = NEW.parent_folder_id;
+        computed_path := new_parent_path || subpath(OLD.path, -1);
+    END IF;
+
+    -- Cascade prefix change to all descendants BEFORE updating this row's own path,
+    -- so the WHERE path <@ OLD.path match still includes this folder's old subtree.
+    UPDATE nephos.folders
+        SET path = computed_path || subpath(path, nlevel(OLD.path))
+        WHERE path <@ OLD.path AND id != NEW.id;
+
+    UPDATE nephos.files
+        SET path = computed_path || subpath(path, nlevel(OLD.path))
+        WHERE path <@ OLD.path;
+
+    UPDATE nephos.folders SET path = computed_path WHERE id = NEW.id;
+
+    RETURN NULL; -- row already updated above; AFTER trigger return value is ignored anyway
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_reparent_folder_path ON nephos.folders;
+CREATE TRIGGER trg_reparent_folder_path
+AFTER UPDATE OF parent_folder_id ON nephos.folders
+FOR EACH ROW EXECUTE FUNCTION nephos.reparent_folder_path();
+
+-- Files: no descendants, just recompute this row's own path on move.
+CREATE OR REPLACE FUNCTION nephos.reparent_file_path()
+RETURNS TRIGGER AS $$
+DECLARE
+    new_parent_path LTREE;
+BEGIN
+    IF NEW.parent_folder_id IS NOT DISTINCT FROM OLD.parent_folder_id THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.parent_folder_id IS NULL THEN
+        NEW.path := nephos.uuid_ltree_label(NEW.id);
+    ELSE
+        SELECT path INTO new_parent_path FROM nephos.folders WHERE id = NEW.parent_folder_id;
+        NEW.path := new_parent_path || subpath(NEW.path, -1);
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_reparent_file_path ON nephos.files;
+CREATE TRIGGER trg_reparent_file_path
+BEFORE UPDATE OF parent_folder_id ON nephos.files
+FOR EACH ROW EXECUTE FUNCTION nephos.reparent_file_path();
+
+-- NOTE: for very large subtrees, the synchronous UPDATE ... WHERE path <@ OLD.path in
+-- reparent_folder_path() can hold long locks. If that becomes a problem in practice,
+-- switch to marking the subtree "path dirty" here and reconciling it via an async job,
+-- with reads falling back to an ancestor-walk until reconciliation completes.
+
+-- ============================================================================
+-- 8b. NAMING-SCOPE LOCK
+-- ============================================================================
+-- Serializes all name-collision resolution (upload suffixing, restore
+-- suffixing, move suffixing/merging) that targets the same destination
+-- folder, so concurrent operations can't both pass a NOT EXISTS check before
+-- either commits. Transaction-scoped: released automatically at
+-- COMMIT/ROLLBACK, no manual unlock needed.
+--
+-- Root-level items are scoped by owner_id instead of a folder id (matching
+-- the root vs. non-root uniqueness split used elsewhere in this schema).
+--
+-- Caveat: because this is transaction-scoped and a single ancestor restore
+-- or folder merge can acquire locks on several different parent-folder
+-- scopes across one call, two concurrent transactions that each touch
+-- overlapping subtrees can deadlock if they acquire those scopes in a
+-- different order relative to each other. Postgres will detect this and
+-- abort one transaction with a deadlock_detected error -- that is the
+-- correct/safe outcome (not corruption), so app-layer retry logic for
+-- restore/move/merge operations should catch and retry on that error code,
+-- the same way it should already retry on unique_violation.
+CREATE OR REPLACE FUNCTION nephos.lock_naming_scope(
+    p_parent_folder_id UUID,
+    p_owner_id UUID
+) RETURNS VOID AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(
+        hashtextextended(
+            COALESCE(p_parent_folder_id::text, 'root:' || p_owner_id::text),
+            0
+        )
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- 8c. NAME DUPLICATE CHECK -- shared by all collision-detection call sites
+-- ============================================================================
+-- Checks whether an ACTIVE (is_trashed = FALSE) file or folder with the given
+-- name already exists in the given location.
+--
+-- Scoping matches the partial unique indexes exactly:
+--   * p_parent_folder_id IS NOT NULL -> scoped to that folder
+--     (idx_unique_active_file_in_folder / idx_unique_active_folder_in_parent)
+--   * p_parent_folder_id IS NULL     -> scoped to p_owner_id at root
+--     (idx_unique_active_file_in_root / idx_unique_active_folder_in_root)
+--
+-- p_exclude_id: pass the id of the item you're moving/renaming so it doesn't
+-- collide against itself (e.g. a no-op move back to its current parent).
+-- Pass NULL when checking a brand-new name (upload, restore) with nothing to exclude.
+CREATE OR REPLACE FUNCTION nephos.name_exists(
+    p_is_file BOOLEAN,
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_name TEXT,
+    p_exclude_id UUID DEFAULT NULL
+) RETURNS BOOLEAN AS $$
+DECLARE
+    v_exists BOOLEAN;
+BEGIN
+    IF p_is_file THEN
+        SELECT EXISTS (
+            SELECT 1 FROM nephos.files
+            WHERE is_trashed = FALSE
+              AND file_name = p_name
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+              AND (p_exclude_id IS NULL OR id != p_exclude_id)
+        ) INTO v_exists;
+    ELSE
+        SELECT EXISTS (
+            SELECT 1 FROM nephos.folders
+            WHERE is_trashed = FALSE
+              AND folder_name = p_name
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+              AND (p_exclude_id IS NULL OR id != p_exclude_id)
+        ) INTO v_exists;
+    END IF;
+
+    RETURN v_exists;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- ============================================================================
+-- 9. SPLIT FILE NAME
+-- ============================================================================
+CREATE OR REPLACE FUNCTION nephos.split_file_name(p_file_name TEXT, OUT base TEXT, OUT ext TEXT)
+AS $$
+DECLARE
+    dot_pos INT;
+BEGIN
+    dot_pos := length(p_file_name) - position('.' IN reverse(p_file_name)) + 1;
+
+    IF dot_pos > 1 AND dot_pos <= length(p_file_name) THEN
+        base := substring(p_file_name FROM 1 FOR dot_pos - 1);
+        ext  := substring(p_file_name FROM dot_pos);
+    ELSE
+        base := p_file_name;
+        ext  := '';
+    END IF;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- ============================================================================
+-- 10. RESOLVE RESTORED FILE NAME COLLISION
+-- ============================================================================
+-- Naming scheme: "<base>_restored<ext>", then "<base>_restored (1)<ext>",
+-- "<base>_restored (2)<ext>", etc. Restore is a bulk/cascading operation (an
+-- ancestor restore brings back an entire subtree unconditionally) so it is
+-- always auto-resolved, never prompted -- there is no single "keep or
+-- replace?" question that could meaningfully cover a whole subtree of
+-- collisions, and "replace" would mean silently destroying whatever is
+-- currently active, which restore must never do.
+CREATE OR REPLACE FUNCTION nephos.resolve_restored_file_name(
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_file_name TEXT
+) RETURNS TEXT AS $$
+DECLARE
+    v_base TEXT;
+    v_ext TEXT;
+    v_candidate TEXT;
+    v_counter INT := 0;
+BEGIN
+    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
+
+    IF NOT EXISTS (
+        SELECT 1 FROM nephos.files
+        WHERE is_trashed = FALSE
+          AND file_name = p_file_name
+          AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+          AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+    ) THEN
+        RETURN p_file_name;
+    END IF;
+
+    SELECT base, ext INTO v_base, v_ext FROM nephos.split_file_name(p_file_name);
+    v_candidate := v_base || '_restored' || v_ext;
+
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM nephos.files
+            WHERE is_trashed = FALSE
+              AND file_name = v_candidate
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+        ) THEN
+            RETURN v_candidate;
+        END IF;
+        v_counter := v_counter + 1;
+        v_candidate := v_base || '_restored (' || v_counter || ')' || v_ext;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- 11. RESOLVE RESTORED FOLDER NAME COLLISION
+-- ============================================================================
+-- Same naming scheme and same "always auto-resolve, never prompt" rationale
+-- as resolve_restored_file_name() above: "<name>_restored", then
+-- "<name>_restored (1)", "<name>_restored (2)", etc.
+CREATE OR REPLACE FUNCTION nephos.resolve_restored_folder_name(
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_folder_name TEXT
+) RETURNS TEXT AS $$
+DECLARE
+    v_candidate TEXT;
+    v_counter INT := 0;
+BEGIN
+    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
+
+    IF NOT EXISTS (
+        SELECT 1 FROM nephos.folders
+        WHERE is_trashed = FALSE
+          AND folder_name = p_folder_name
+          AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+          AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+    ) THEN
+        RETURN p_folder_name;
+    END IF;
+
+    v_candidate := p_folder_name || '_restored';
+
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM nephos.folders
+            WHERE is_trashed = FALSE
+              AND folder_name = v_candidate
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+        ) THEN
+            RETURN v_candidate;
+        END IF;
+        v_counter := v_counter + 1;
+        v_candidate := p_folder_name || '_restored (' || v_counter || ')';
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- 12. RESOLVE FILE / FOLDER NAME COLLISION -- "keep both" (n) suffix
+-- ============================================================================
+-- Shared by: upload "keep both", single-file move "keep both", per-file merge
+-- decisions during a folder merge, and folder move "keep duplicate". Unlike
+-- the restore resolvers above, these are only ever invoked after either an
+-- explicit user prompt (upload/move) or an explicit "merge" choice that
+-- implies auto-suffixing for any files it uncovers (see section 14 comment).
+-- Naming scheme: "<base> (1)<ext>", "<base> (2)<ext>", ... -- no plain
+-- "<base><ext>" first attempt, since the caller only invokes this once a
+-- collision on the original name is already confirmed.
+CREATE OR REPLACE FUNCTION nephos.resolve_file_name_collision(
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_file_name TEXT
+) RETURNS TEXT AS $$
+DECLARE
+    v_base TEXT;
+    v_ext TEXT;
+    v_candidate TEXT;
+    v_counter INT := 1;
+BEGIN
+    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
+
+    SELECT base, ext INTO v_base, v_ext FROM nephos.split_file_name(p_file_name);
+    v_candidate := v_base || ' (' || v_counter || ')' || v_ext;
+
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM nephos.files
+            WHERE is_trashed = FALSE
+              AND file_name = v_candidate
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+        ) THEN
+            RETURN v_candidate;
+        END IF;
+        v_counter := v_counter + 1;
+        v_candidate := v_base || ' (' || v_counter || ')' || v_ext;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Folder equivalent, used by move_folder()'s 'keep_duplicate' path. Kept
+-- separate from resolve_restored_folder_name() because that one uses the
+-- "_restored" suffix -- a deliberately different naming convention for a
+-- deliberately different (auto-resolved, no prompt) operation.
+CREATE OR REPLACE FUNCTION nephos.resolve_folder_name_collision(
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_folder_name TEXT
+) RETURNS TEXT AS $$
+DECLARE
+    v_candidate TEXT;
+    v_counter INT := 1;
+BEGIN
+    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
+
+    v_candidate := p_folder_name || ' (' || v_counter || ')';
+
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM nephos.folders
+            WHERE is_trashed = FALSE
+              AND folder_name = v_candidate
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+        ) THEN
+            RETURN v_candidate;
+        END IF;
+        v_counter := v_counter + 1;
+        v_candidate := p_folder_name || ' (' || v_counter || ')';
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- App-layer contract for upload "keep both" / "replace":
+--   BEGIN;
+--     SELECT nephos.lock_naming_scope(:parent_folder_id, :owner_id);
+--     -- app checks for an existing active file with the same name
+--     -- collision + "keep both":
+--     --   SELECT nephos.resolve_file_name_collision(:parent_folder_id, :owner_id, :file_name)
+--     --   INSERT ... using the resolved name
+--     -- collision + "replace" (overwrite in place):
+--     --   UPDATE nephos.files SET storage_key = ..., content_hash = ...,
+--     --     size_bytes = ..., updated_at = now() WHERE id = existing_id
+--     --   -- app is responsible for deleting the old object-storage blob if
+--     --   -- storage_key changes; this schema does not track blob lifecycle
+--     -- no collision:
+--     --   INSERT ... using original name
+--   COMMIT;
+-- The unique partial indexes on files/folders remain the hard backstop
+-- regardless -- the lock removes the practical race, but the app should
+-- still catch unique_violation as defense-in-depth rather than assume the
+-- lock makes it impossible.
+
+-- ============================================================================
+-- 13. TRASH CASCADE (trash and restore)
+-- ============================================================================
+-- Trashing a folder cascades is_trashed/trashed_at to every descendant folder/file.
+-- Restoring a folder unconditionally cascades restore to every descendant, including
+-- items that were individually trashed before the ancestor was trashed at all -- e.g.
+-- file X deleted on Monday, its parent folder deleted on Friday, then parent restored
+-- the following Monday: X comes back too, per product rule.
+--
+-- Note this does NOT touch acl_entries at all, on either trash or restore. That's
+-- intentional: effective_permission() (section 17) checks the target's own
+-- is_trashed FIRST and returns NULL immediately if trashed, so access is already
+-- fully blocked without physically altering any grant. This preserves the product
+-- rule that revocation is a deliberate owner action (setting acl_entries.revoked_at) --
+-- trashing and restoring must never implicitly revoke or reinstate a grant.
+--
+-- Restore-time naming rule: a restored FILE or FOLDER whose name collides with
+-- an already-active sibling is renamed "<base>_restored<ext>" (files) or
+-- "<name>_restored" (folders), or "... (n)" if that's also taken.
+--
+-- Files and folders are each restored one at a time in a loop (not a single bulk
+-- UPDATE) so that two trashed rows which collide with EACH OTHER (not with
+-- anything currently active) are resolved sequentially against each other's
+-- already-applied names, rather than both computing the same candidate name off
+-- a shared snapshot.
+--
+-- pg_trigger_depth() guard prevents this trigger's own UPDATEs on descendant
+-- rows from re-firing itself recursively down the subtree.
+CREATE OR REPLACE FUNCTION nephos.cascade_folder_trash_state()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_file RECORD;
+    v_folder RECORD;
+BEGIN
+    IF pg_trigger_depth() > 1 THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.is_trashed = TRUE AND OLD.is_trashed = FALSE THEN
+        UPDATE nephos.folders
+            SET is_trashed = TRUE, trashed_at = NEW.trashed_at
+            WHERE path <@ OLD.path AND id != NEW.id AND is_trashed = FALSE;
+
+        UPDATE nephos.files
+            SET is_trashed = TRUE, trashed_at = NEW.trashed_at
+            WHERE path <@ OLD.path AND is_trashed = FALSE;
+
+    ELSIF NEW.is_trashed = FALSE AND OLD.is_trashed = TRUE THEN
+        FOR v_folder IN
+            SELECT id, parent_folder_id, owner_id, folder_name
+            FROM nephos.folders
+            WHERE path <@ NEW.path AND id != NEW.id AND is_trashed = TRUE
+        LOOP
+            UPDATE nephos.folders
+            SET is_trashed = FALSE,
+                trashed_at = NULL,
+                folder_name = nephos.resolve_restored_folder_name(v_folder.parent_folder_id, v_folder.owner_id, v_folder.folder_name)
+            WHERE id = v_folder.id;
+        END LOOP;
+
+        FOR v_file IN
+            SELECT id, parent_folder_id, owner_id, file_name
+            FROM nephos.files
+            WHERE path <@ NEW.path AND is_trashed = TRUE
+        LOOP
+            UPDATE nephos.files
+            SET is_trashed = FALSE,
+                trashed_at = NULL,
+                file_name = nephos.resolve_restored_file_name(v_file.parent_folder_id, v_file.owner_id, v_file.file_name)
+            WHERE id = v_file.id;
+        END LOOP;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_cascade_folder_trash ON nephos.folders;
+CREATE TRIGGER trg_cascade_folder_trash
+AFTER UPDATE OF is_trashed ON nephos.folders
+FOR EACH ROW EXECUTE FUNCTION nephos.cascade_folder_trash_state();
+
+-- ============================================================================
+-- 14. PREVENT ORPHAN RESTORE (block direct restore of a non-root trashed item)
+-- ============================================================================
+-- A file/folder with a trashed ancestor can ONLY come back via that ancestor's
+-- own restore cascading down (cascade_folder_trash_state() above) -- it can
+-- never be restored on its own while an ancestor is still trashed.
+CREATE OR REPLACE FUNCTION nephos.prevent_orphan_restore()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_path LTREE;
+    v_has_trashed_ancestor BOOLEAN;
+BEGIN
+    IF NOT (OLD.is_trashed = TRUE AND NEW.is_trashed = FALSE) THEN
+        RETURN NEW;
+    END IF;
+
+    IF pg_trigger_depth() > 1 THEN
+        RETURN NEW;
+    END IF;
+
+    v_path := OLD.path;
+
+    SELECT EXISTS (
+        SELECT 1 FROM nephos.folders
+        WHERE path @> v_path
+          AND path != v_path
+          AND is_trashed = TRUE
+    ) INTO v_has_trashed_ancestor;
+
+    IF v_has_trashed_ancestor THEN
+        RAISE EXCEPTION 'Cannot restore % directly -- an ancestor folder is still trashed; restore the ancestor instead', OLD.id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_prevent_orphan_restore_folders ON nephos.folders;
+CREATE TRIGGER trg_prevent_orphan_restore_folders
+BEFORE UPDATE OF is_trashed ON nephos.folders
+FOR EACH ROW EXECUTE FUNCTION nephos.prevent_orphan_restore();
+
+DROP TRIGGER IF EXISTS trg_prevent_orphan_restore_files ON nephos.files;
+CREATE TRIGGER trg_prevent_orphan_restore_files
+BEFORE UPDATE OF is_trashed ON nephos.files
+FOR EACH ROW EXECUTE FUNCTION nephos.prevent_orphan_restore();
+
+-- App layer contract:
+--   * User-initiated delete on a specific item -> app sets is_trashed=TRUE,
+--     trashed_at=now() on that row directly.
+--   * Cascade from an ancestor delete/restore -> handled entirely by the trigger above.
+--   * Restoring an ancestor always restores its full subtree unconditionally,
+--     regardless of each descendant's own trash history.
+--   * A scheduled job (not modeled here) should hard-delete any file/folder row
+--     (and its object-storage blob) where trashed_at < now() - interval '20 days'.
+
+-- ============================================================================
+-- 15. VALIDATE ACL ENTRY
+-- ============================================================================
+-- Enforces the two rules that can't be expressed as plain CHECK constraints
+-- because they require a lookup:
+--   1. user-principal grants cannot target the item's own owner (redundant/confusing)
+--   2. public_link entries must carry a sufficiently long share_token
+--
+-- v2.1: since ownership is now immutable (section 17), this invariant --
+-- "an acl_entries row's grantee_id was never the target's owner" -- holds for
+-- the row's ENTIRE lifetime once created, not just at creation time. There is
+-- no ownership-transfer path that could later make an existing grantee_id
+-- collide with the owner.
+CREATE OR REPLACE FUNCTION nephos.validate_acl_entry()
+RETURNS TRIGGER AS $$
+DECLARE
+    target_owner UUID;
+BEGIN
+    IF NEW.principal_type = 'user' THEN
+        IF NEW.file_id IS NOT NULL THEN
+            SELECT owner_id INTO target_owner FROM nephos.files WHERE id = NEW.file_id;
+        ELSE
+            SELECT owner_id INTO target_owner FROM nephos.folders WHERE id = NEW.folder_id;
+        END IF;
+
+        IF target_owner IS NULL THEN
+            RAISE EXCEPTION 'Target file/folder % does not exist', COALESCE(NEW.file_id, NEW.folder_id);
+        END IF;
+
+        IF target_owner = NEW.grantee_id THEN
+            RAISE EXCEPTION 'Cannot share an item with its own owner';
+        END IF;
+
+    ELSIF NEW.principal_type = 'public_link' THEN
+        IF NEW.share_token IS NULL OR length(NEW.share_token) < 32 THEN
+            RAISE EXCEPTION 'public_link entries require a share_token of sufficient length';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_validate_acl_entry ON nephos.acl_entries;
+CREATE TRIGGER trg_validate_acl_entry
+BEFORE INSERT OR UPDATE OF file_id, folder_id, grantee_id, principal_type, share_token
+ON nephos.acl_entries
+FOR EACH ROW EXECUTE FUNCTION nephos.validate_acl_entry();
+
+-- ============================================================================
+-- 16. EFFECTIVE PERMISSION (single acl_entries table, highest live grant wins)
+-- ============================================================================
+-- Computes what a given user can actually do with a given file or folder,
+-- accounting for BOTH direct user shares and live public links, on the item
+-- itself or any ancestor folder. Because both principal types now live in one
+-- table with one revoked_at column, this collapses to two branches (ancestor,
+-- exact-target) instead of the four needed when direct shares and public links
+-- were separate tables -- the principal_type distinction only matters inside
+-- the WHERE clause (public_link rows are eligible for anyone; user rows only
+-- for a matching grantee_id), not as a structural join difference.
+--
+-- Grants are never merged/mutated on write -- this function always combines
+-- them at read time and takes the highest permission found, so revoking a
+-- public link cleanly falls back to any still-live direct share for that user,
+-- and revoking a user's direct share doesn't touch the public link.
+--
+-- Every branch stays typed as nephos.permission_level (never cast to text) so
+-- MAX() uses the enum's declared order (edit > view) instead of comparing
+-- lexicographically, which would wrongly favor 'view'.
+--
+-- The target's own is_trashed is checked FIRST, before acl_entries is
+-- consulted at all. cascade_folder_trash_state() (section 13) keeps a
+-- descendant's is_trashed in sync with all of its ancestors, so checking the
+-- target row alone correctly blocks access whether it was trashed directly or
+-- via an ancestor.
+--
+-- p_user_id may be NULL for an anonymous/unauthenticated caller resolving a
+-- public link -- the user-principal branch simply never matches NULL, which is
+-- correct (anonymous callers can only pick up public_link grants).
+--
+-- v2.1: expiry checks removed entirely -- "live" is now purely revoked_at IS
+-- NULL for both principal types. This function still reads live table state
+-- (acl_entries, trash status), so it remains correctly marked STABLE even
+-- though it no longer references now() anywhere.
+--
+-- Returns NULL if the caller has no access at all (or the target doesn't exist,
+-- or is trashed).
+CREATE OR REPLACE FUNCTION nephos.effective_permission(
+    p_target_path LTREE,
+    p_is_file BOOLEAN,       -- TRUE if p_target_path refers to a file, FALSE for folder
+    p_target_id UUID,        -- the file_id or folder_id itself, for exact (non-ancestor) grant rows
+    p_user_id UUID
+) RETURNS nephos.permission_level AS $$
+DECLARE
+    result nephos.permission_level;
+    target_trashed BOOLEAN;
+BEGIN
+    IF p_is_file THEN
+        SELECT is_trashed INTO target_trashed FROM nephos.files WHERE id = p_target_id;
+    ELSE
+        SELECT is_trashed INTO target_trashed FROM nephos.folders WHERE id = p_target_id;
+    END IF;
+
+    IF target_trashed IS NULL OR target_trashed THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT MAX(perm) INTO result FROM (
+        -- ACL entry on an ancestor folder (or this folder itself) -- either
+        -- principal type, live.
+        SELECT a.permission AS perm
+        FROM nephos.acl_entries a
+        JOIN nephos.folders f ON f.id = a.folder_id
+        WHERE a.revoked_at IS NULL
+          AND f.is_trashed = FALSE
+          AND f.path @> p_target_path
+          AND (
+                a.principal_type = 'public_link'
+             OR (a.principal_type = 'user' AND a.grantee_id = p_user_id)
+          )
+
+        UNION ALL
+
+        -- ACL entry on this exact file -- either principal type, live.
+        SELECT a.permission
+        FROM nephos.acl_entries a
+        JOIN nephos.files fl ON fl.id = a.file_id
+        WHERE p_is_file AND a.file_id = p_target_id
+          AND a.revoked_at IS NULL
+          AND fl.is_trashed = FALSE
+          AND (
+                a.principal_type = 'public_link'
+             OR (a.principal_type = 'user' AND a.grantee_id = p_user_id)
+          )
+    ) AS perms(perm);
+
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- Note: password-protected public links (acl_entries.password_hash) are verified
+-- at the app layer before this function is even called for an anonymous caller --
+-- this function only decides the permission level, not link-password gating.
+
+-- ============================================================================
+-- 17. OWNER ACCESS & IMMUTABLE OWNERSHIP
+-- ============================================================================
+-- effective_permission() above ONLY looks at acl_entries -- it knows nothing
+-- about ownership, and validate_acl_entry() (section 15) actively prevents an
+-- owner from ever having an acl_entries row of their own. So calling
+-- effective_permission() for the owner of an item returns NULL (no access),
+-- which is wrong: the owner always has full rights, and those rights are
+-- broader than 'edit' (delete, reshare, manage public links) -- broader than
+-- the view/edit enum can express at all.
+--
+-- Ownership must be checked FIRST, before ever consulting effective_permission().
+-- is_owner() is a thin helper so the app doesn't duplicate this lookup; the
+-- actual "owner implies full rights" branching belongs in the app's
+-- authorization layer, since nephos.permission_level has no value that means
+-- "owner".
+CREATE OR REPLACE FUNCTION nephos.is_owner(
+    p_is_file BOOLEAN,
+    p_target_id UUID,
+    p_user_id UUID
+) RETURNS BOOLEAN AS $$
+DECLARE
+    target_owner UUID;
+BEGIN
+    IF p_is_file THEN
+        SELECT owner_id INTO target_owner FROM nephos.files WHERE id = p_target_id;
+    ELSE
+        SELECT owner_id INTO target_owner FROM nephos.folders WHERE id = p_target_id;
+    END IF;
+
+    RETURN target_owner IS NOT NULL AND target_owner = p_user_id;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- v2.1: ownership cannot be transferred, by product rule -- there is no
+-- transfer flow anywhere in the app. Enforced here as defense-in-depth so a
+-- future app-layer bug (or ad-hoc admin query) can't silently violate it.
+-- The only legitimate way owner_id changes is via the ON DELETE CASCADE on
+-- nephos.users (section 1), which removes the row entirely rather than
+-- reassigning it.
+CREATE OR REPLACE FUNCTION nephos.prevent_owner_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.owner_id != OLD.owner_id THEN
+        RAISE EXCEPTION 'owner_id is immutable -- ownership cannot be transferred';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_prevent_folder_owner_change ON nephos.folders;
+CREATE TRIGGER trg_prevent_folder_owner_change
+BEFORE UPDATE OF owner_id ON nephos.folders
+FOR EACH ROW EXECUTE FUNCTION nephos.prevent_owner_change();
+
+DROP TRIGGER IF EXISTS trg_prevent_file_owner_change ON nephos.files;
+CREATE TRIGGER trg_prevent_file_owner_change
+BEFORE UPDATE OF owner_id ON nephos.files
+FOR EACH ROW EXECUTE FUNCTION nephos.prevent_owner_change();
+
+-- App-layer authorization contract:
+--   1. Check is_owner() first -> if true, grant full rights (view, edit, delete,
+--      reshare, manage public links), and skip effective_permission() entirely.
+--   2. Otherwise, call effective_permission() and map the result (or NULL) to
+--      whatever the requested action needs (e.g. NULL or 'view' -> deny edit/delete/
+--      reshare requests; 'edit' -> allow view+edit but still deny delete/reshare,
+--      which remain owner-only regardless of share permission).
+
+-- ============================================================================
+-- 18. FOLDER MOVE & MERGE
+-- ============================================================================
+-- Move collision resolution only ever needs to check the item being moved
+-- directly (the folder/file whose parent_folder_id is changing) against its
+-- new destination. Descendants of a moved folder never need collision
+-- checking of their own in the non-merge case: their parent_folder_id is
+-- untouched by a move (only the top-level moved folder's parent_folder_id
+-- changes), so their existing (parent_folder_id, name) uniqueness -- already
+-- valid before the move -- is structurally unaffected by it.
+-- reparent_folder_path() (section 8) cascades the path column to descendants
+-- automatically; nothing here needs to rename or re-check them, UNLESS the
+-- user chooses to merge (below), in which case descendants can genuinely
+-- collide with the destination subtree and need their own resolution.
+
+-- ----------------------------------------------------------------------------
+-- 18a. Preview file collisions for a folder merge (read-only, no locking)
+-- ----------------------------------------------------------------------------
+-- Walks source and destination in parallel, following the exact same
+-- folder-pairing logic merge_folder_contents() uses (same-named child
+-- folders pair up and recurse; everything else is a non-issue for files).
+-- Returns one row per file-name collision found, so the app can build a
+-- "choose what to do with each file" UI before the user commits to a merge.
+--
+-- This is advisory only -- it takes no lock, so its result is a snapshot
+-- that can go stale between preview and execution (something could change
+-- in either subtree in between). The real merge (18b) re-checks at
+-- execution time regardless and must never trust this blindly; any
+-- collision merge_folder_contents() finds that isn't covered by the
+-- decisions built from this preview falls back to the non-destructive
+-- 'keep' behavior (see 18b), never to 'replace'.
+CREATE OR REPLACE FUNCTION nephos.preview_merge_file_collisions(
+    p_source_folder_id UUID,
+    p_dest_folder_id UUID
+) RETURNS TABLE (source_file_id UUID, dest_file_id UUID, file_name TEXT, folder_context TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT sf.id, df.id, sf.file_name, df2.folder_name::TEXT
+    FROM nephos.files sf
+    JOIN nephos.files df ON df.file_name = sf.file_name
+                         AND df.parent_folder_id = p_dest_folder_id
+                         AND df.is_trashed = FALSE
+    JOIN nephos.folders df2 ON df2.id = p_dest_folder_id
+    WHERE sf.parent_folder_id = p_source_folder_id AND sf.is_trashed = FALSE;
+
+    -- Recurse into same-named child folder pairs
+    RETURN QUERY
+    SELECT r.*
+    FROM nephos.folders sc
+    JOIN nephos.folders dc ON dc.folder_name = sc.folder_name
+                           AND dc.parent_folder_id = p_dest_folder_id
+                           AND dc.is_trashed = FALSE
+    CROSS JOIN LATERAL nephos.preview_merge_file_collisions(sc.id, dc.id) r
+    WHERE sc.parent_folder_id = p_source_folder_id AND sc.is_trashed = FALSE;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- ----------------------------------------------------------------------------
+-- 18b. Merge folder contents (recursive)
+-- ----------------------------------------------------------------------------
+-- Recursively empties p_source_folder_id into p_dest_folder_id:
+--   * child folders that collide by name recurse into this same function
+--     against the colliding dest folder, then the now-empty source shell is
+--     hard-deleted (not trashed -- see rationale below);
+--   * child folders that don't collide are simply reparented, no renaming;
+--   * child files follow p_file_mode:
+--       'keep_both' (default) -- always auto-suffix via
+--         resolve_file_name_collision(), never overwrites anything;
+--       'replace'   -- always overwrite the destination file's content,
+--         source file row is discarded;
+--       'per_file'  -- consult p_file_decisions, a JSONB object mapping
+--         source_file_id (as text) -> 'keep' | 'replace'. Any collision
+--         found here with no matching key (stale preview relative to 18a,
+--         or an app bug) falls back to 'keep' -- this function never
+--         replaces a file without an explicit decision on record.
+--
+-- p_source_folder_id itself is left empty for the caller (move_folder) to
+-- remove. The emptied shell is hard-deleted rather than trashed: trashing an
+-- empty, contentless folder would leave something in the user's trash that,
+-- if restored, reappears as an empty folder with no relationship to where
+-- its former contents ended up -- not a meaningful thing to undo. This does
+-- mean a merge is not reversible via trash/restore, which is accepted as a
+-- consequence of "Merge" being an action the user explicitly chose (see
+-- move_folder below), not something that happened to them automatically.
+--
+-- Similarly, if the emptied source folder itself carried its own direct
+-- shares or public link (distinct from whatever the destination folder's own
+-- shares are), those acl_entries rows cascade-delete with it -- recipients of
+-- those specific grants lose access, silently, as part of the merge. Anyone
+-- who instead had access via the destination folder's own shares keeps that
+-- access, since the destination row survives. This is a real product
+-- tradeoff, accepted here because "Merge" is opt-in and mutually exclusive
+-- with "Keep duplicate" (which preserves the source folder's own row, and
+-- with it any of its own direct shares).
+CREATE OR REPLACE FUNCTION nephos.merge_folder_contents(
+    p_source_folder_id UUID,
+    p_dest_folder_id UUID,
+    p_file_mode TEXT DEFAULT 'keep_both',      -- 'keep_both' | 'replace' | 'per_file'
+    p_file_decisions JSONB DEFAULT '{}'::JSONB -- used only when p_file_mode = 'per_file'
+) RETURNS VOID AS $$
+DECLARE
+    v_owner_id UUID;
+    v_child_folder RECORD;
+    v_child_file RECORD;
+    v_colliding_id UUID;
+    v_decision TEXT;
+BEGIN
+    SELECT owner_id INTO v_owner_id FROM nephos.folders WHERE id = p_dest_folder_id;
+    PERFORM nephos.lock_naming_scope(p_dest_folder_id, v_owner_id);
+
+    -- Child folders: same-named pairs recurse, everything else just reparents.
+    FOR v_child_folder IN
+        SELECT id, folder_name FROM nephos.folders
+        WHERE parent_folder_id = p_source_folder_id AND is_trashed = FALSE
+    LOOP
+        SELECT id INTO v_colliding_id
+        FROM nephos.folders
+        WHERE parent_folder_id = p_dest_folder_id
+          AND folder_name = v_child_folder.folder_name
+          AND is_trashed = FALSE;
+
+        IF v_colliding_id IS NOT NULL THEN
+            PERFORM nephos.merge_folder_contents(v_child_folder.id, v_colliding_id, p_file_mode, p_file_decisions);
+            DELETE FROM nephos.folders WHERE id = v_child_folder.id; -- now-empty shell
+        ELSE
+            UPDATE nephos.folders SET parent_folder_id = p_dest_folder_id
+            WHERE id = v_child_folder.id; -- fires existing reparent trigger, cascades path
+        END IF;
+    END LOOP;
+
+    -- Child files: collision handling driven by p_file_mode.
+    FOR v_child_file IN
+        SELECT id, file_name FROM nephos.files
+        WHERE parent_folder_id = p_source_folder_id AND is_trashed = FALSE
+    LOOP
+        SELECT id INTO v_colliding_id FROM nephos.files
+        WHERE parent_folder_id = p_dest_folder_id
+          AND file_name = v_child_file.file_name AND is_trashed = FALSE;
+
+        IF v_colliding_id IS NULL THEN
+            UPDATE nephos.files SET parent_folder_id = p_dest_folder_id WHERE id = v_child_file.id;
+            CONTINUE;
+        END IF;
+
+        v_decision := CASE
+            WHEN p_file_mode = 'replace' THEN 'replace'
+            WHEN p_file_mode = 'per_file' THEN COALESCE(p_file_decisions ->> v_child_file.id::text, 'keep')
+            ELSE 'keep'
+        END;
+
+        IF v_decision = 'replace' THEN
+            UPDATE nephos.files
+            SET storage_key = sf.storage_key, content_hash = sf.content_hash, size_bytes = sf.size_bytes,
+                mime_type = sf.mime_type, updated_at = now()
+            FROM (SELECT storage_key, content_hash, size_bytes, mime_type FROM nephos.files WHERE id = v_child_file.id) sf
+            WHERE id = v_colliding_id;
+            DELETE FROM nephos.files WHERE id = v_child_file.id; -- source row now redundant
+            -- App is responsible for deleting the destination's old
+            -- object-storage blob if its storage_key changed above; this
+            -- schema does not track blob lifecycle.
+        ELSE
+            UPDATE nephos.files
+            SET file_name = nephos.resolve_file_name_collision(p_dest_folder_id, v_owner_id, v_child_file.file_name),
+                parent_folder_id = p_dest_folder_id
+            WHERE id = v_child_file.id;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ----------------------------------------------------------------------------
+-- 18c. Move folder (top-level entry point)
+-- ----------------------------------------------------------------------------
+-- p_on_collision: 'merge' | 'keep_duplicate' | NULL. Ignored if there is no
+-- name collision at the destination. The app MUST have already prompted the
+-- user and determined which of these to use BEFORE calling this -- the
+-- choice cannot be inferred from the data, and this function deliberately
+-- refuses (RAISE EXCEPTION) rather than silently defaulting to either
+-- option, since merging and duplicating are structurally different actions
+-- (one destroys the source folder's identity, one doesn't) and guessing
+-- wrong in either direction is the wrong failure mode.
+--
+--   'keep_duplicate' -- the moving folder itself is renamed
+--     "<name> (n)" (via resolve_folder_name_collision) and reparented as-is.
+--     No merge, no recursion, no interaction with its contents at all --
+--     this is the same shape as a file "keep both" move, just applied to
+--     the one top-level folder.
+--
+--   'merge' -- the moving folder's contents are recursively merged into the
+--     colliding destination folder (18b), then the emptied source folder
+--     shell is hard-deleted. p_file_mode/p_file_decisions pass through to
+--     control how any file-level collisions uncovered during the merge are
+--     resolved (see 18b for the full contract and rationale).
+CREATE OR REPLACE FUNCTION nephos.move_folder(
+    p_folder_id UUID,
+    p_dest_parent_folder_id UUID,
+    p_on_collision TEXT DEFAULT NULL,          -- 'merge' | 'keep_duplicate' | NULL
+    p_file_mode TEXT DEFAULT 'keep_both',      -- passed through to merge_folder_contents when merging
+    p_file_decisions JSONB DEFAULT '{}'::JSONB -- passed through to merge_folder_contents when merging
+) RETURNS VOID AS $$
+DECLARE
+    v_owner_id UUID;
+    v_folder_name TEXT;
+    v_colliding_id UUID;
+    v_new_name TEXT;
+BEGIN
+    SELECT owner_id, folder_name INTO v_owner_id, v_folder_name
+    FROM nephos.folders WHERE id = p_folder_id;
+
+    PERFORM nephos.lock_naming_scope(p_dest_parent_folder_id, v_owner_id);
+
+    SELECT id INTO v_colliding_id
+    FROM nephos.folders
+    WHERE parent_folder_id IS NOT DISTINCT FROM p_dest_parent_folder_id
+      AND folder_name = v_folder_name
+      AND is_trashed = FALSE
+      AND (p_dest_parent_folder_id IS NOT NULL OR owner_id = v_owner_id);
+
+    IF v_colliding_id IS NULL THEN
+        UPDATE nephos.folders SET parent_folder_id = p_dest_parent_folder_id WHERE id = p_folder_id;
+        RETURN;
+    END IF;
+
+    IF p_on_collision = 'merge' THEN
+        PERFORM nephos.merge_folder_contents(p_folder_id, v_colliding_id, p_file_mode, p_file_decisions);
+        DELETE FROM nephos.folders WHERE id = p_folder_id;
+
+    ELSIF p_on_collision = 'keep_duplicate' THEN
+        v_new_name := nephos.resolve_folder_name_collision(p_dest_parent_folder_id, v_owner_id, v_folder_name);
+        UPDATE nephos.folders
+        SET folder_name = v_new_name, parent_folder_id = p_dest_parent_folder_id
+        WHERE id = p_folder_id;
+
+    ELSE
+        RAISE EXCEPTION 'Folder name collision at destination -- caller must specify p_on_collision (merge or keep_duplicate)';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- App-layer contract for folder move:
+--   1. Call move_folder() speculatively with p_on_collision := NULL.
+--      * No collision -> it just succeeds, done.
+--      * Collision -> it raises; catch this and prompt the user
+--        ("Merge folders" / "Keep both").
+--   2. If "Keep both": re-call move_folder() with p_on_collision :=
+--      'keep_duplicate'. Nothing further needed.
+--   3. If "Merge": call preview_merge_file_collisions() (18a) to build the
+--      list of file-level collisions inside the merge. Offer the user
+--      keep-both / replace-all / choose-per-file for that list, then
+--      re-call move_folder() with p_on_collision := 'merge' and the
+--      corresponding p_file_mode ('keep_both' | 'replace' | 'per_file') and,
+--      for per_file, a {source_file_id: "keep"|"replace"} JSONB map built
+--      from the user's answers. Because 18a's result can go stale between
+--      preview and execution, treat this as best-effort: any collision the
+--      real merge discovers that isn't in the decision map defaults to
+--      'keep' (never 'replace'), per 18b.
+
+-- App-layer contract for single-file move (unchanged in shape from upload):
+--   Same as the upload contract in section 12 -- check for a colliding
+--   active file at the destination, prompt keep-both/replace if found,
+--   resolve via resolve_file_name_collision() or overwrite in place
+--   accordingly, all under the same lock_naming_scope() convention.
+
+-- ============================================================================
+-- Migration: scale/correctness fixes
+-- ============================================================================
+-- 1. nephos.move_file()      -- file-move mirror of move_folder(), with the
+--                                same lock/collision handling move_folder()
+--                                already has. The bare `UPDATE files SET
+--                                parent_folder_id = $2` previously used by the
+--                                app had none of this.
+-- 2. sync_storage_usage()    -- trigger that keeps nephos.users.storage_used
+--    (+ trigger)                correct automatically on insert/trash/
+--                                restore/hard-delete, so it can no longer
+--                                drift out of sync with reality regardless of
+--                                which code path touches nephos.files.
+-- 3. storage_used CHECK      -- makes the quota an enforced invariant rather
+--                                than something the app promises to respect.
+-- 4. resolve_*_collision() / -- all four naming-collision resolvers capped
+--    resolve_restored_*_name()  at 1000 iterations so one abusive/messy
+--                                caller can't hold the naming-scope
+--                                advisory lock open indefinitely and stall
+--                                every other writer into that folder.
+-- ============================================================================
+
+
+-- ----------------------------------------------------------------------------
+-- 1. FILE MOVE -- mirror of nephos.move_folder(), file-shaped
+-- ----------------------------------------------------------------------------
+-- Unlike folder move, there is no 'merge' option for a single file -- a file
+-- collision can only be resolved by keeping both (suffix) or replacing the
+-- destination file outright. See the "App-layer contract for single-file
+-- move" comment already in the schema (section preceding this migration):
+--   1. Call move_file() with p_on_collision := NULL.
+--      * No collision -> succeeds, done.
+--      * Collision -> raises; catch this and prompt keep-both/replace.
+--   2. Re-call with p_on_collision := 'keep_duplicate' or 'replace'.
+CREATE OR REPLACE FUNCTION nephos.move_file(
+    p_file_id UUID,
+    p_dest_parent_folder_id UUID,
+    p_on_collision TEXT DEFAULT NULL  -- 'replace' | 'keep_duplicate' | NULL
+) RETURNS VOID AS $$
+DECLARE
+    v_owner_id UUID;
+    v_file_name TEXT;
+    v_colliding_id UUID;
+    v_new_name TEXT;
+BEGIN
+    SELECT owner_id, file_name INTO v_owner_id, v_file_name
+    FROM nephos.files WHERE id = p_file_id;
+
+    PERFORM nephos.lock_naming_scope(p_dest_parent_folder_id, v_owner_id);
+
+    SELECT id INTO v_colliding_id
+    FROM nephos.files
+    WHERE parent_folder_id IS NOT DISTINCT FROM p_dest_parent_folder_id
+      AND file_name = v_file_name
+      AND is_trashed = FALSE
+      AND (p_dest_parent_folder_id IS NOT NULL OR owner_id = v_owner_id)
+      AND id != p_file_id;
+
+    IF v_colliding_id IS NULL THEN
+        UPDATE nephos.files SET parent_folder_id = p_dest_parent_folder_id WHERE id = p_file_id;
+        RETURN;
+    END IF;
+
+    IF p_on_collision = 'replace' THEN
+        DELETE FROM nephos.files WHERE id = v_colliding_id;
+        UPDATE nephos.files SET parent_folder_id = p_dest_parent_folder_id WHERE id = p_file_id;
+
+    ELSIF p_on_collision = 'keep_duplicate' THEN
+        v_new_name := nephos.resolve_file_name_collision(p_dest_parent_folder_id, v_owner_id, v_file_name);
+        UPDATE nephos.files
+        SET file_name = v_new_name, parent_folder_id = p_dest_parent_folder_id
+        WHERE id = p_file_id;
+
+    ELSE
+        RAISE EXCEPTION 'File name collision at destination -- caller must specify p_on_collision (replace or keep_duplicate)';
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- ----------------------------------------------------------------------------
+-- 2 & 3. STORAGE USAGE -- self-maintaining counter + enforced quota
+-- ----------------------------------------------------------------------------
+-- Fires on any change to nephos.files that affects "active bytes owned by a
+-- user": insert of a non-trashed file, is_trashed flipping either direction,
+-- and hard delete of a still-active row. This is correct regardless of which
+-- code path (API, admin tool, background job, migration script) touches the
+-- table -- storage_used can no longer drift because a caller forgot a step.
+CREATE OR REPLACE FUNCTION nephos.sync_storage_usage() RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NOT NEW.is_trashed THEN
+            UPDATE nephos.users SET storage_used = storage_used + NEW.size_bytes WHERE id = NEW.owner_id;
+        END IF;
+
+    ELSIF TG_OP = 'UPDATE' THEN
+        IF OLD.is_trashed = FALSE AND NEW.is_trashed = TRUE THEN
+            UPDATE nephos.users SET storage_used = storage_used - OLD.size_bytes WHERE id = OLD.owner_id;
+        ELSIF OLD.is_trashed = TRUE AND NEW.is_trashed = FALSE THEN
+            UPDATE nephos.users SET storage_used = storage_used + NEW.size_bytes WHERE id = NEW.owner_id;
+        END IF;
+
+    ELSIF TG_OP = 'DELETE' THEN
+        IF NOT OLD.is_trashed THEN
+            UPDATE nephos.users SET storage_used = storage_used - OLD.size_bytes WHERE id = OLD.owner_id;
+        END IF;
+    END IF;
+
+    RETURN NULL; -- AFTER trigger, return value ignored
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_sync_storage_usage ON nephos.files;
+CREATE TRIGGER trg_sync_storage_usage
+    AFTER INSERT OR UPDATE OF is_trashed OR DELETE ON nephos.files
+    FOR EACH ROW EXECUTE FUNCTION nephos.sync_storage_usage();
+
+-- Makes the quota an enforced invariant rather than a convention the app is
+-- trusted to respect. NOT VALID + VALIDATE avoids locking the whole table
+-- for existing rows if nephos.users is already populated -- drop the
+-- NOT VALID clause if running this on a fresh/empty table.
+-- DROP IF EXISTS first so this migration is safely re-runnable (Postgres has
+-- no ADD CONSTRAINT IF NOT EXISTS).
+ALTER TABLE nephos.users DROP CONSTRAINT IF EXISTS check_storage_within_quota;
+ALTER TABLE nephos.users
+    ADD CONSTRAINT check_storage_within_quota
+    CHECK (storage_used <= storage_quota) NOT VALID;
+ALTER TABLE nephos.users VALIDATE CONSTRAINT check_storage_within_quota;
+
+
+-- ----------------------------------------------------------------------------
+-- 4. COLLISION-LOOP CAP -- bound the naming-scope lock hold time
+-- ----------------------------------------------------------------------------
+-- Same as the existing function, with the unbounded LOOP capped so one
+-- client can't hold the naming-scope advisory lock open indefinitely by
+-- re-uploading the same filename thousands of times. Past the cap, fall back
+-- to a short random suffix rather than continuing to scan sequentially.
+CREATE OR REPLACE FUNCTION nephos.resolve_file_name_collision(
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_file_name TEXT
+) RETURNS TEXT AS $$
+DECLARE
+    v_base TEXT;
+    v_ext TEXT;
+    v_candidate TEXT;
+    v_counter INT := 1;
+BEGIN
+    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
+
+    SELECT base, ext INTO v_base, v_ext FROM nephos.split_file_name(p_file_name);
+    v_candidate := v_base || ' (' || v_counter || ')' || v_ext;
+
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM nephos.files
+            WHERE is_trashed = FALSE
+              AND file_name = v_candidate
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+        ) THEN
+            RETURN v_candidate;
+        END IF;
+
+        v_counter := v_counter + 1;
+
+        IF v_counter > 1000 THEN
+            -- Bail out of sequential scanning; use a short random suffix
+            -- instead of holding the lock indefinitely.
+            v_candidate := v_base || ' (' || substr(md5(random()::text), 1, 8) || ')' || v_ext;
+        ELSE
+            v_candidate := v_base || ' (' || v_counter || ')' || v_ext;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- Folder equivalent of the cap above -- used by move_folder()'s
+-- 'keep_duplicate' path, so it holds the same naming-scope lock for
+-- however many " (n)" suffixes are already taken.
+CREATE OR REPLACE FUNCTION nephos.resolve_folder_name_collision(
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_folder_name TEXT
+) RETURNS TEXT AS $$
+DECLARE
+    v_candidate TEXT;
+    v_counter INT := 1;
+BEGIN
+    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
+
+    v_candidate := p_folder_name || ' (' || v_counter || ')';
+
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM nephos.folders
+            WHERE is_trashed = FALSE
+              AND folder_name = v_candidate
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+        ) THEN
+            RETURN v_candidate;
+        END IF;
+
+        v_counter := v_counter + 1;
+
+        IF v_counter > 1000 THEN
+            v_candidate := p_folder_name || ' (' || substr(md5(random()::text), 1, 8) || ')';
+        ELSE
+            v_candidate := p_folder_name || ' (' || v_counter || ')';
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- Restore resolvers loop too -- a subtree restore is bulk/cascading and
+-- never prompts (see original comment), so a folder with hundreds of
+-- previously-restored duplicates sitting in the same scope hits the same
+-- lock-held-open problem. Same cap, same random-suffix fallback, keeping
+-- the distinct "_restored" naming convention intact below the cap.
+CREATE OR REPLACE FUNCTION nephos.resolve_restored_file_name(
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_file_name TEXT
+) RETURNS TEXT AS $$
+DECLARE
+    v_base TEXT;
+    v_ext TEXT;
+    v_candidate TEXT;
+    v_counter INT := 0;
+BEGIN
+    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
+
+    IF NOT EXISTS (
+        SELECT 1 FROM nephos.files
+        WHERE is_trashed = FALSE
+          AND file_name = p_file_name
+          AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+          AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+    ) THEN
+        RETURN p_file_name;
+    END IF;
+
+    SELECT base, ext INTO v_base, v_ext FROM nephos.split_file_name(p_file_name);
+    v_candidate := v_base || '_restored' || v_ext;
+
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM nephos.files
+            WHERE is_trashed = FALSE
+              AND file_name = v_candidate
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+        ) THEN
+            RETURN v_candidate;
+        END IF;
+
+        v_counter := v_counter + 1;
+
+        IF v_counter > 1000 THEN
+            v_candidate := v_base || '_restored (' || substr(md5(random()::text), 1, 8) || ')' || v_ext;
+        ELSE
+            v_candidate := v_base || '_restored (' || v_counter || ')' || v_ext;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION nephos.resolve_restored_folder_name(
+    p_parent_folder_id UUID,
+    p_owner_id UUID,
+    p_folder_name TEXT
+) RETURNS TEXT AS $$
+DECLARE
+    v_candidate TEXT;
+    v_counter INT := 0;
+BEGIN
+    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
+
+    IF NOT EXISTS (
+        SELECT 1 FROM nephos.folders
+        WHERE is_trashed = FALSE
+          AND folder_name = p_folder_name
+          AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+          AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+    ) THEN
+        RETURN p_folder_name;
+    END IF;
+
+    v_candidate := p_folder_name || '_restored';
+
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM nephos.folders
+            WHERE is_trashed = FALSE
+              AND folder_name = v_candidate
+              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
+              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
+        ) THEN
+            RETURN v_candidate;
+        END IF;
+
+        v_counter := v_counter + 1;
+
+        IF v_counter > 1000 THEN
+            v_candidate := p_folder_name || '_restored (' || substr(md5(random()::text), 1, 8) || ')';
+        ELSE
+            v_candidate := p_folder_name || '_restored (' || v_counter || ')';
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;

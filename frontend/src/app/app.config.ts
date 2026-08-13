@@ -10,6 +10,7 @@ import { AuthService } from './core/auth/services/auth.service';
 import {
   provideHttpClient,
   withInterceptorsFromDi,
+  withInterceptors,
 } from '@angular/common/http';
 import { authRefreshInterceptor } from './core/auth/interceptors/auth-refresh.interceptor';
 
@@ -19,7 +20,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
-    provideHttpClient(withInterceptorsFromDi()),
+    provideHttpClient(withInterceptors([authRefreshInterceptor])),
     provideAppInitializer(() =>
       firstValueFrom(inject(AuthService).getProfile()).catch(() => null),
     ),

@@ -21,6 +21,18 @@ class FileOperationsRepository:
     async def get_storage_usage(self, conn: AsyncConn, owner_id: uuid.UUID) -> int:
         return await conn.fetchval(queries.GET_STORAGE_USAGE, owner_id) or 0
 
+    async def get_user_storage_quota(self, conn: AsyncConn, owner_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        row = await conn.fetchrow(queries.GET_USER_STORAGE_QUOTA, owner_id)
+        return self._row_to_dict(row)
+
+    async def check_storage_available(
+        self, conn: AsyncConn, owner_id: uuid.UUID, requested_bytes: int
+    ) -> bool:
+        return bool(await conn.fetchval(queries.CHECK_STORAGE_AVAILABLE, owner_id, requested_bytes))
+
+    async def recalculate_user_storage(self, conn: AsyncConn, owner_id: uuid.UUID) -> int:
+        return await conn.fetchval(queries.RECALCULATE_USER_STORAGE, owner_id) or 0
+
     async def get_folder_by_id(self, conn: AsyncConn, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
         row = await conn.fetchrow(queries.GET_FOLDER_BY_ID, folder_id)
         return self._row_to_dict(row)
@@ -84,18 +96,42 @@ class FileOperationsRepository:
         self,
         conn: AsyncConn,
         folder_id: uuid.UUID,
-        parent_folder_id: uuid.UUID | None,
-    ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(queries.MOVE_FOLDER, folder_id, parent_folder_id)
-        return self._row_to_dict(row)
+        dest_parent_folder_id: uuid.UUID | None,
+        *,
+        on_collision: str | None = None,  # 'merge' | 'keep_duplicate' | None
+        file_mode: str = "keep_both",
+        file_decisions: dict[str, Any] | None = None,
+    ) -> None:
+        import json
+        await conn.fetchval(
+            queries.CALL_MOVE_FOLDER,
+            folder_id,
+            dest_parent_folder_id,
+            on_collision,
+            file_mode,
+            json.dumps(file_decisions or {}),
+        )
 
     async def move_file(
         self,
         conn: AsyncConn,
         file_id: uuid.UUID,
+        dest_parent_folder_id: uuid.UUID | None,
+        *,
+        on_collision: str | None = None,  # 'replace' | 'keep_duplicate' | None
+    ) -> None:
+        await conn.fetchval(queries.CALL_MOVE_FILE, file_id, dest_parent_folder_id, on_collision)
+
+    async def get_folder_by_parent_and_name(
+        self,
+        conn: AsyncConn,
         parent_folder_id: uuid.UUID | None,
+        folder_name: str,
+        owner_id: uuid.UUID,
     ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(queries.MOVE_FILE, file_id, parent_folder_id)
+        row = await conn.fetchrow(
+            queries.GET_FOLDER_BY_PARENT_AND_NAME, parent_folder_id, folder_name, owner_id
+        )
         return self._row_to_dict(row)
 
     async def trash_folder(self, conn: AsyncConn, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
@@ -123,8 +159,9 @@ class FileOperationsRepository:
         permission: str,
         created_by: uuid.UUID | None,
     ) -> dict[str, Any]:
+        query = queries.CREATE_ACL_ENTRY if file_id is not None else queries.CREATE_ACL_ENTRY_FOLDER
         row = await conn.fetchrow(
-            queries.CREATE_ACL_ENTRY,
+            query,
             file_id,
             folder_id,
             principal_type,

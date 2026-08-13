@@ -7,7 +7,7 @@ import {
 } from '@angular/common/http';
 import { forkJoin, Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { FILE_OPERATION_ENDPOINTS } from '../endpoints/file-operation-endpoints';
+import { FILE_OPERATION_ENDPOINTS } from '../endpoints/file-operations-endpoints';
 import {
   DriveFileItem,
   DriveFolderItem,
@@ -170,7 +170,7 @@ export class FileOperationsService {
   getStorageUsage(): Observable<{ used_bytes: number; total_bytes: number }> {
     return this.http.get<{ used_bytes: number; total_bytes: number }>(
       FILE_OPERATION_ENDPOINTS.storageUsage,
-      { withCredentials: true }
+      { withCredentials: true },
     );
   }
 

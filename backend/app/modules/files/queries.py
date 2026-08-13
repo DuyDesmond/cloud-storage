@@ -16,6 +16,31 @@ FROM nephos.files
 WHERE owner_id = $1 AND is_trashed = FALSE
 """
 
+# Check current usage and limit
+GET_USER_STORAGE_QUOTA = """
+    SELECT storage_used, storage_quota
+    FROM nephos.users
+    WHERE id = $1
+"""
+
+CHECK_STORAGE_AVAILABLE = """
+    SELECT (storage_used + $2) <= storage_quota AS has_space
+    FROM nephos.users
+    WHERE id = $1
+"""
+
+RECALCULATE_USER_STORAGE = """
+    UPDATE nephos.users
+    SET storage_used = COALESCE((
+        SELECT SUM(size_bytes)
+        FROM nephos.files
+        WHERE owner_id = $1 AND is_trashed = FALSE
+    ), 0),
+    updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+    RETURNING storage_used;
+"""
+
 CREATE_FOLDER = """
 INSERT INTO nephos.folders (owner_id, parent_folder_id, folder_name)
 VALUES ($1, $2, $3)
@@ -31,19 +56,31 @@ RETURNING id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mi
           path, is_trashed, trashed_at, created_at, updated_at
 """
 
-MOVE_FOLDER = """
-UPDATE nephos.folders
-SET parent_folder_id = $2
-WHERE id = $1
-RETURNING id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
+CALL_MOVE_FOLDER = """
+SELECT nephos.move_folder(
+    p_folder_id => $1,
+    p_dest_parent_folder_id => $2,
+    p_on_collision => $3,
+    p_file_mode => $4,
+    p_file_decisions => $5
+)
 """
 
-MOVE_FILE = """
-UPDATE nephos.files
-SET parent_folder_id = $2
-WHERE id = $1
-RETURNING id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_type, content_hash,
-          path, is_trashed, trashed_at, created_at, updated_at
+CALL_MOVE_FILE = """
+SELECT nephos.move_file(
+    p_file_id => $1,
+    p_dest_parent_folder_id => $2,
+    p_on_collision => $3
+)
+"""
+
+GET_FOLDER_BY_PARENT_AND_NAME = """
+SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
+FROM nephos.folders
+WHERE parent_folder_id IS NOT DISTINCT FROM $1
+  AND folder_name = $2
+  AND owner_id = $3
+  AND is_trashed = FALSE
 """
 
 TRASH_FOLDER = """
@@ -76,6 +113,20 @@ INSERT INTO nephos.acl_entries (
     password_hash, permission, created_by
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (file_id, grantee_id) WHERE principal_type = 'user' AND revoked_at IS NULL
+DO UPDATE SET permission = EXCLUDED.permission
+RETURNING id, file_id, folder_id, principal_type, grantee_id, share_token, permission,
+          revoked_at, created_by, created_at, updated_at
+"""
+
+CREATE_ACL_ENTRY_FOLDER = """
+INSERT INTO nephos.acl_entries (
+    file_id, folder_id, principal_type, grantee_id, share_token,
+    password_hash, permission, created_by
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (folder_id, grantee_id) WHERE principal_type = 'user' AND revoked_at IS NULL
+DO UPDATE SET permission = EXCLUDED.permission
 RETURNING id, file_id, folder_id, principal_type, grantee_id, share_token, permission,
           revoked_at, created_by, created_at, updated_at
 """
@@ -172,13 +223,6 @@ FROM nephos.folders
 WHERE owner_id = $1 AND is_trashed = TRUE
   AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
 """
-"""
-SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
-FROM nephos.folders
-WHERE owner_id = $1 AND is_trashed = FALSE
-  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
-"""
-
 DELETE_FILE_BY_ID = """
 DELETE FROM nephos.files WHERE id = $1
 """

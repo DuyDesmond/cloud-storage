@@ -152,6 +152,7 @@ class AuthService:
                     pass
 
         # 2) Delete user row (DB cascades files/folders/acl entries)
+
         deleted = await self.repo.delete_user(conn, user_id)
         if not deleted:
             raise HTTPException(

@@ -10,6 +10,5 @@ asyncpg
 PyJWT
 passlib
 pydantic-settings
-minio
-python-multipart
 boto3
+python-multipart

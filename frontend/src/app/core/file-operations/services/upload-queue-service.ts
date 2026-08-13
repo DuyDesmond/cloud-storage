@@ -6,7 +6,7 @@ import {
   PresignedUploadResponsePayload,
   InitiateMultipartUploadResponsePayload,
   PresignPartResponsePayload,
-} from './file-operations.services';
+} from './file-operations.service';
 import { DriveFileItem } from '../../../shared/components/drive-item-card/drive-item.model';
 import {
   CHUNK_SIZE_BYTES,

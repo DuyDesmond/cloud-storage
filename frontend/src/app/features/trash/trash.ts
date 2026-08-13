@@ -4,7 +4,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { FileOperationsService } from '../../core/file-operations/services/file-operations.services';
+import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
 import { DriveItem } from '../../shared/components/drive-item-card/drive-item.model';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import {

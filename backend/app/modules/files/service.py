@@ -753,6 +753,12 @@ class FileOperationsService:
         except asyncpg.UniqueViolationError:
             await self.storage.delete_object(storage_key)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="File name already exists.")
+        except asyncpg.CheckViolationError:
+            await self.storage.delete_object(storage_key)
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Storage quota exceeded.",
+            )
         except Exception:
             await self.storage.delete_object(storage_key)
             raise
@@ -776,8 +782,24 @@ class FileOperationsService:
         if payload.parent_folder_id == folder_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Folder cannot be moved into itself.")
 
+        folder_name = folder["folder_name"]
+
         async def _op():
-            return await self.repo.move_folder(conn, folder_id, payload.parent_folder_id)
+            async with conn.transaction():
+                await self.repo.move_folder(
+                    conn,
+                    folder_id,
+                    payload.parent_folder_id,
+                    on_collision=payload.on_collision,
+                    file_mode=payload.file_mode,
+                    file_decisions=payload.file_decisions,
+                )
+                row = await self.repo.get_folder_by_id(conn, folder_id)
+                if row is None:
+                    row = await self.repo.get_folder_by_parent_and_name(
+                        conn, payload.parent_folder_id, folder_name, current_user["id"]
+                    )
+                return row
 
         try:
             row = await self._with_db_retry(_op)
@@ -785,9 +807,15 @@ class FileOperationsService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination folder not found.")
         except asyncpg.CheckViolationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except asyncpg.RaiseError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A folder with that name already exists at the destination. "
+                "Resubmit with on_collision set to 'merge' or 'keep_duplicate'.",
+            )
 
         if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found after move.")
         return self._as_folder_response(row)
 
     async def move_file(
@@ -805,12 +833,22 @@ class FileOperationsService:
         await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
 
         async def _op():
-            return await self.repo.move_file(conn, file_id, payload.parent_folder_id)
+            async with conn.transaction():
+                await self.repo.move_file(
+                    conn, file_id, payload.parent_folder_id, on_collision=payload.on_collision
+                )
+                return await self.repo.get_file_by_id(conn, file_id)
 
         try:
             row = await self._with_db_retry(_op)
         except asyncpg.ForeignKeyViolationError:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination folder not found.")
+        except asyncpg.RaiseError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A file with that name already exists at the destination. "
+                "Resubmit with on_collision set to 'replace' or 'keep_duplicate'.",
+            )
 
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
@@ -940,7 +978,7 @@ class FileOperationsService:
                 if new_name is None:
                             raise HTTPException(
                                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                detail="Could not resolve a valid name for the restored folder."
+                                detail="Could not resolve a valid name for the restored file."
                             )
                 return await self.repo.restore_file(conn, file_id, new_name)
 
@@ -1272,7 +1310,8 @@ class FileOperationsService:
         current_user: dict[str, Any],
     ) -> schemas.StorageUsageResponse:
         used = await self.repo.get_storage_usage(conn, current_user["id"])
-        total = getattr(settings, "STORAGE_QUOTA_BYTES", 20 * 1024 ** 3)
+        quota_row = await self.repo.get_user_storage_quota(conn, current_user["id"])
+        total = quota_row["storage_quota"] if quota_row else getattr(settings, "STORAGE_QUOTA_BYTES", 20 * 1024 ** 3)
         return schemas.StorageUsageResponse(used_bytes=used, total_bytes=total)
 
 
