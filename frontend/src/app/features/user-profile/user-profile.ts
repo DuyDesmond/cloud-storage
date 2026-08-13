@@ -1,4 +1,7 @@
-import { DEFAULT_STORAGE_QUOTA_BYTES, FileOperationsService } from '../../core/file-operations/services/file-operations.service';
+import {
+  DEFAULT_STORAGE_QUOTA_BYTES,
+  FileOperationsService,
+} from '../../core/file-operations/services/file-operations.service';
 import { Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
