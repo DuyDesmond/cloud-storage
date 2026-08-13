@@ -4,7 +4,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
+import { DEFAULT_STORAGE_QUOTA_BYTES, FileOperationsService } from '../../core/file-operations/services/file-operations.service';
 import { DriveItem } from '../../shared/components/drive-item-card/drive-item.model';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import {
@@ -22,6 +22,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { UploadQueueService } from '@core/file-operations/services/upload-queue-service';
 import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
 import { firstValueFrom, Subscription } from 'rxjs';
+import { AuthService } from '@core/auth/services/auth.service';
 
 @Component({
   selector: 'app-trash',
@@ -50,13 +51,14 @@ export class Trash {
   isSidebarCollapsed = signal<boolean>(false);
   currentNav = signal<SidePanelNavKey>('trash');
   usedBytes = signal<number>(0);
-  totalBytes = signal<number>(20 * 1024 ** 3);
+  totalBytes = signal<number>(DEFAULT_STORAGE_QUOTA_BYTES);
   usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
   totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   items = signal<DriveItem[]>([]);
   hasItems = computed(() => this.items().length > 0);
   private dialog = inject(MatDialog);
+  private authService = inject(AuthService);
   public uploadQueueService = inject(UploadQueueService);
 
   ngOnInit(): void {
@@ -84,9 +86,11 @@ export class Trash {
 
   fetchStorageUsage(): void {
     this.fileService.getStorageUsage().subscribe({
-      next: ({ used_bytes, total_bytes }) => {
+      next: ({ used_bytes }) => {
         this.usedBytes.set(used_bytes);
-        this.totalBytes.set(total_bytes);
+        this.totalBytes.set(
+          this.authService.currentUser()?.storage_quota ?? DEFAULT_STORAGE_QUOTA_BYTES,
+        );
       },
     });
   }

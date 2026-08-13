@@ -6,8 +6,8 @@
   <div class="workspace-container">
     <!-- Side Panel handles storage & main file views -->
     <app-side-panel
-      [usedBytes]="usedStorageGB()"
-      [totalBytes]="totalStorageGB()"
+      [usedBytes]="usedBytes()"
+      [totalBytes]="totalBytes()"
       [activeNav]="activeSideNav()"
       (navChange)="switchNav($event)"
     ></app-side-panel>
@@ -51,15 +51,17 @@
             <div class="storage-details">
               <div class="storage-numbers">
                 <p class="huge-text">
-                  {{ usedBytes() }}<span class="unit">GB</span>
+                  {{ usedStorageGB().toFixed(2) }}<span class="unit">GB</span>
                 </p>
-                <p class="sub-text">Used of {{ totalBytes() }}GB total</p>
+                <p class="sub-text">
+                  Used of {{ totalStorageGB().toFixed(2) }} GB total
+                </p>
               </div>
 
               <div class="progress-container">
                 <mat-progress-bar
                   mode="determinate"
-                  [value]="(usedBytes() / totalBytes()) * 100"
+                  [value]="storagePercentage()"
                 ></mat-progress-bar>
               </div>
 

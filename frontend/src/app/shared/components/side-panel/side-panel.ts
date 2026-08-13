@@ -1,7 +1,6 @@
 import {
   Component,
   computed,
-  EventEmitter,
   inject,
   input,
   output,
@@ -12,7 +11,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { Router } from '@angular/router';
-import { FileOperationsService } from '../../../core/file-operations/services/file-operations.service';
+import { DEFAULT_STORAGE_QUOTA_BYTES } from '../../../core/file-operations/services/file-operations.service';
 
 type SidePanelNavKey = 'home' | 'recent' | 'starred' | 'trash' | '';
 
@@ -38,19 +37,26 @@ export interface SidePanelNavItem {
 })
 export class SidePanel {
   private router = inject(Router);
-  private fileService = inject(FileOperationsService);
   activeNav = input<SidePanelNavKey>('home');
   navChange = output<SidePanelNavKey>();
   upgrade = output<void>();
   upload = output<void>();
 
   usedBytes = input<number>(0);
-  totalBytes = input<number>(20 * 1024 ** 3);
+  totalBytes = input<number>(DEFAULT_STORAGE_QUOTA_BYTES);
   usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
   totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   isCollapsed = signal<boolean>(false);
   collapsedChange = output<boolean>();
+
+  isLoading = signal<boolean>(true);
+
+  ngOnChanges() {
+    if (this.usedBytes() && this.totalBytes()) {
+      this.isLoading.set(false);
+    }
+  }
 
   navItems: SidePanelNavItem[] = [
     { key: 'home', icon: 'home', label: 'Home', route: '/drive' },
@@ -60,7 +66,9 @@ export class SidePanel {
   ];
 
   storagePercentage(): number {
-    return Math.round((this.usedStorageGB() / this.totalStorageGB()) * 100);
+    const total = this.totalStorageGB();
+    if (!total) return 0;
+    return Math.min(100, Math.round((this.usedStorageGB() / total) * 100));
   }
 
   toggleCollapse(): void {
@@ -71,13 +79,4 @@ export class SidePanel {
     this.navChange.emit(item.key);
     this.router.navigateByUrl(item.route);
   }
-
-  // fetchStorageUsage(): void {
-  //   this.fileService.getStorageUsage().subscribe({
-  //     next: ({ used_bytes, total_bytes }) => {
-  //       this.usedBytes.set(used_bytes);
-  //       this.totalBytes.set(total_bytes);
-  //     },
-  //   });
-  // }
 }

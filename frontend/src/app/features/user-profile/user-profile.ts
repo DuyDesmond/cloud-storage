@@ -1,4 +1,4 @@
-import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
+import { DEFAULT_STORAGE_QUOTA_BYTES, FileOperationsService } from '../../core/file-operations/services/file-operations.service';
 import { Component, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -9,7 +9,6 @@ import {
   SidePanel,
   SidePanelNavKey,
 } from '../../shared/components/side-panel/side-panel';
-import { HostBinding } from '@angular/core';
 import { AuthService } from '@core/auth/services/auth.service';
 import { Router } from '@angular/router';
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
@@ -70,9 +69,14 @@ export class UserProfile {
   });
 
   usedBytes = signal<number>(0);
-  totalBytes = signal<number>(20 * 1024 ** 3);
+  totalBytes = signal<number>(DEFAULT_STORAGE_QUOTA_BYTES);
   usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
   totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
+  storagePercentage = computed(() => {
+    const total = this.totalStorageGB();
+    if (!total) return 0;
+    return Math.min(100, Math.round((this.usedStorageGB() / total) * 100));
+  });
 
   storageCategories = signal<StorageCategory[]>([
     {
@@ -137,9 +141,11 @@ export class UserProfile {
 
   fetchStorageUsage(): void {
     this.fileService.getStorageUsage().subscribe({
-      next: ({ used_bytes, total_bytes }) => {
+      next: ({ used_bytes }) => {
         this.usedBytes.set(used_bytes);
-        this.totalBytes.set(total_bytes);
+        this.totalBytes.set(
+          this.currentUser()?.storage_quota ?? DEFAULT_STORAGE_QUOTA_BYTES,
+        );
       },
     });
   }

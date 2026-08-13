@@ -32,7 +32,7 @@
     </button>
   </div>
 
-  <div class="storage-summary">
+  <div class="storage-summary" [@ngIf]="!isLoading()">
     <h2>Cloud Storage</h2>
     <p class="storage-text">
       <span class="bold">{{ usedStorageGB().toFixed(2) }} GB</span> of {{

@@ -3,8 +3,8 @@
 
   <div class="workspace-container">
     <app-side-panel
-      [usedBytes]="usedStorageGB()"
-      [totalBytes]="totalStorageGB()"
+      [usedBytes]="usedBytes()"
+      [totalBytes]="totalBytes()"
       [activeNav]="currentNav()"
       (navChange)="switchNav($any($event))"
       (upload)="onUploadTrigger()"
@@ -17,7 +17,6 @@
           <h2>Cloud Drive</h2>
           <p>Access your stored files and folders.</p>
         </header>
-
         @if (isLoading()) {
         <div class="loading-bar">
           <mat-progress-bar mode="indeterminate"></mat-progress-bar>

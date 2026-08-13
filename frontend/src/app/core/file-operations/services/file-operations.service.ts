@@ -15,6 +15,8 @@ import {
 } from '../../../shared/components/drive-item-card/drive-item.model';
 import { StorageContentResponse } from '../../../features/drive/drive';
 
+export const DEFAULT_STORAGE_QUOTA_BYTES = 20 * 1024 ** 3;
+
 export interface BackendFileResponse {
   id: string;
   owner_id: string;

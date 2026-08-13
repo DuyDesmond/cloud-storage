@@ -1311,7 +1311,7 @@ class FileOperationsService:
     ) -> schemas.StorageUsageResponse:
         used = await self.repo.get_storage_usage(conn, current_user["id"])
         quota_row = await self.repo.get_user_storage_quota(conn, current_user["id"])
-        total = quota_row["storage_quota"] if quota_row else getattr(settings, "STORAGE_QUOTA_BYTES", 20 * 1024 ** 3)
+        total = quota_row["storage_quota"] if quota_row else settings.STORAGE_QUOTA_BYTES
         return schemas.StorageUsageResponse(used_bytes=used, total_bytes=total)
 
 

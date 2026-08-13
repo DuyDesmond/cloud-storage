@@ -1,4 +1,7 @@
-import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
+import {
+  DEFAULT_STORAGE_QUOTA_BYTES,
+  FileOperationsService,
+} from '../../core/file-operations/services/file-operations.service';
 import {
   Component,
   inject,
@@ -29,6 +32,7 @@ import {
 import { UploadQueueService } from '../../core/file-operations/services/upload-queue-service';
 import { UploadWidget } from '../upload-widget/upload-widget';
 import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
+import { AuthService } from '@core/auth/services/auth.service';
 
 export interface Folder {
   id: string;
@@ -86,12 +90,13 @@ export class Drive implements OnInit, OnDestroy {
   isSidebarCollapsed = signal<boolean>(false);
 
   usedBytes = signal<number>(0);
-  totalBytes = signal<number>(20 * 1024 ** 3);
+  totalBytes = signal<number>(DEFAULT_STORAGE_QUOTA_BYTES);
   usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
   totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   private dialog = inject(MatDialog);
   private fileService = inject(FileOperationsService);
+  private authService = inject(AuthService);
   public uploadQueueService = inject(UploadQueueService);
 
   private fileUploadedSub?: Subscription;
@@ -194,9 +199,12 @@ export class Drive implements OnInit, OnDestroy {
 
   fetchStorageUsage(): void {
     this.fileService.getStorageUsage().subscribe({
-      next: ({ used_bytes, total_bytes }) => {
+      next: ({ used_bytes }) => {
         this.usedBytes.set(used_bytes);
-        this.totalBytes.set(total_bytes);
+        this.totalBytes.set(
+          this.authService.currentUser()?.storage_quota ??
+            DEFAULT_STORAGE_QUOTA_BYTES,
+        );
       },
     });
   }
