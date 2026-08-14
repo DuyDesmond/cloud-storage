@@ -83,6 +83,16 @@ WHERE parent_folder_id IS NOT DISTINCT FROM $1
   AND is_trashed = FALSE
 """
 
+GET_FILE_BY_PARENT_AND_NAME = """
+SELECT id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_type, content_hash,
+       path, is_trashed, trashed_at, created_at, updated_at
+FROM nephos.files
+WHERE parent_folder_id IS NOT DISTINCT FROM $1
+  AND file_name = $2
+  AND owner_id = $3
+  AND is_trashed = FALSE
+"""
+
 TRASH_FOLDER = """
 UPDATE nephos.folders
 SET is_trashed = TRUE,

@@ -574,11 +574,18 @@ BEGIN
         ) THEN
             RETURN v_candidate;
         END IF;
+
         v_counter := v_counter + 1;
-        v_candidate := v_base || '_restored (' || v_counter || ')' || v_ext;
+
+        IF v_counter > 1000 THEN
+            v_candidate := v_base || '_restored (' || substr(md5(random()::text), 1, 8) || ')' || v_ext;
+        ELSE
+            v_candidate := v_base || '_restored (' || v_counter || ')' || v_ext;
+        END IF;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
 
 -- ============================================================================
 -- 11. RESOLVE RESTORED FOLDER NAME COLLISION
@@ -619,8 +626,14 @@ BEGIN
         ) THEN
             RETURN v_candidate;
         END IF;
+
         v_counter := v_counter + 1;
-        v_candidate := p_folder_name || '_restored (' || v_counter || ')';
+
+        IF v_counter > 1000 THEN
+            v_candidate := p_folder_name || '_restored (' || substr(md5(random()::text), 1, 8) || ')';
+        ELSE
+            v_candidate := p_folder_name || '_restored (' || v_counter || ')';
+        END IF;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
@@ -662,8 +675,16 @@ BEGIN
         ) THEN
             RETURN v_candidate;
         END IF;
+
         v_counter := v_counter + 1;
-        v_candidate := v_base || ' (' || v_counter || ')' || v_ext;
+
+        IF v_counter > 1000 THEN
+            -- Bail out of sequential scanning; use a short random suffix
+            -- instead of holding the lock indefinitely.
+            v_candidate := v_base || ' (' || substr(md5(random()::text), 1, 8) || ')' || v_ext;
+        ELSE
+            v_candidate := v_base || ' (' || v_counter || ')' || v_ext;
+        END IF;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
@@ -695,8 +716,14 @@ BEGIN
         ) THEN
             RETURN v_candidate;
         END IF;
+
         v_counter := v_counter + 1;
-        v_candidate := p_folder_name || ' (' || v_counter || ')';
+
+        IF v_counter > 1000 THEN
+            v_candidate := p_folder_name || ' (' || substr(md5(random()::text), 1, 8) || ')';
+        ELSE
+            v_candidate := p_folder_name || ' (' || v_counter || ')';
+        END IF;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
@@ -1462,189 +1489,3 @@ ALTER TABLE nephos.users
     ADD CONSTRAINT check_storage_within_quota
     CHECK (storage_used <= storage_quota) NOT VALID;
 ALTER TABLE nephos.users VALIDATE CONSTRAINT check_storage_within_quota;
-
-
--- ----------------------------------------------------------------------------
--- 4. COLLISION-LOOP CAP -- bound the naming-scope lock hold time
--- ----------------------------------------------------------------------------
--- Same as the existing function, with the unbounded LOOP capped so one
--- client can't hold the naming-scope advisory lock open indefinitely by
--- re-uploading the same filename thousands of times. Past the cap, fall back
--- to a short random suffix rather than continuing to scan sequentially.
-CREATE OR REPLACE FUNCTION nephos.resolve_file_name_collision(
-    p_parent_folder_id UUID,
-    p_owner_id UUID,
-    p_file_name TEXT
-) RETURNS TEXT AS $$
-DECLARE
-    v_base TEXT;
-    v_ext TEXT;
-    v_candidate TEXT;
-    v_counter INT := 1;
-BEGIN
-    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
-
-    SELECT base, ext INTO v_base, v_ext FROM nephos.split_file_name(p_file_name);
-    v_candidate := v_base || ' (' || v_counter || ')' || v_ext;
-
-    LOOP
-        IF NOT EXISTS (
-            SELECT 1 FROM nephos.files
-            WHERE is_trashed = FALSE
-              AND file_name = v_candidate
-              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
-              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
-        ) THEN
-            RETURN v_candidate;
-        END IF;
-
-        v_counter := v_counter + 1;
-
-        IF v_counter > 1000 THEN
-            -- Bail out of sequential scanning; use a short random suffix
-            -- instead of holding the lock indefinitely.
-            v_candidate := v_base || ' (' || substr(md5(random()::text), 1, 8) || ')' || v_ext;
-        ELSE
-            v_candidate := v_base || ' (' || v_counter || ')' || v_ext;
-        END IF;
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql;
-
-
--- Folder equivalent of the cap above -- used by move_folder()'s
--- 'keep_duplicate' path, so it holds the same naming-scope lock for
--- however many " (n)" suffixes are already taken.
-CREATE OR REPLACE FUNCTION nephos.resolve_folder_name_collision(
-    p_parent_folder_id UUID,
-    p_owner_id UUID,
-    p_folder_name TEXT
-) RETURNS TEXT AS $$
-DECLARE
-    v_candidate TEXT;
-    v_counter INT := 1;
-BEGIN
-    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
-
-    v_candidate := p_folder_name || ' (' || v_counter || ')';
-
-    LOOP
-        IF NOT EXISTS (
-            SELECT 1 FROM nephos.folders
-            WHERE is_trashed = FALSE
-              AND folder_name = v_candidate
-              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
-              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
-        ) THEN
-            RETURN v_candidate;
-        END IF;
-
-        v_counter := v_counter + 1;
-
-        IF v_counter > 1000 THEN
-            v_candidate := p_folder_name || ' (' || substr(md5(random()::text), 1, 8) || ')';
-        ELSE
-            v_candidate := p_folder_name || ' (' || v_counter || ')';
-        END IF;
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql;
-
-
--- Restore resolvers loop too -- a subtree restore is bulk/cascading and
--- never prompts (see original comment), so a folder with hundreds of
--- previously-restored duplicates sitting in the same scope hits the same
--- lock-held-open problem. Same cap, same random-suffix fallback, keeping
--- the distinct "_restored" naming convention intact below the cap.
-CREATE OR REPLACE FUNCTION nephos.resolve_restored_file_name(
-    p_parent_folder_id UUID,
-    p_owner_id UUID,
-    p_file_name TEXT
-) RETURNS TEXT AS $$
-DECLARE
-    v_base TEXT;
-    v_ext TEXT;
-    v_candidate TEXT;
-    v_counter INT := 0;
-BEGIN
-    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
-
-    IF NOT EXISTS (
-        SELECT 1 FROM nephos.files
-        WHERE is_trashed = FALSE
-          AND file_name = p_file_name
-          AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
-          AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
-    ) THEN
-        RETURN p_file_name;
-    END IF;
-
-    SELECT base, ext INTO v_base, v_ext FROM nephos.split_file_name(p_file_name);
-    v_candidate := v_base || '_restored' || v_ext;
-
-    LOOP
-        IF NOT EXISTS (
-            SELECT 1 FROM nephos.files
-            WHERE is_trashed = FALSE
-              AND file_name = v_candidate
-              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
-              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
-        ) THEN
-            RETURN v_candidate;
-        END IF;
-
-        v_counter := v_counter + 1;
-
-        IF v_counter > 1000 THEN
-            v_candidate := v_base || '_restored (' || substr(md5(random()::text), 1, 8) || ')' || v_ext;
-        ELSE
-            v_candidate := v_base || '_restored (' || v_counter || ')' || v_ext;
-        END IF;
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION nephos.resolve_restored_folder_name(
-    p_parent_folder_id UUID,
-    p_owner_id UUID,
-    p_folder_name TEXT
-) RETURNS TEXT AS $$
-DECLARE
-    v_candidate TEXT;
-    v_counter INT := 0;
-BEGIN
-    PERFORM nephos.lock_naming_scope(p_parent_folder_id, p_owner_id);
-
-    IF NOT EXISTS (
-        SELECT 1 FROM nephos.folders
-        WHERE is_trashed = FALSE
-          AND folder_name = p_folder_name
-          AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
-          AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
-    ) THEN
-        RETURN p_folder_name;
-    END IF;
-
-    v_candidate := p_folder_name || '_restored';
-
-    LOOP
-        IF NOT EXISTS (
-            SELECT 1 FROM nephos.folders
-            WHERE is_trashed = FALSE
-              AND folder_name = v_candidate
-              AND parent_folder_id IS NOT DISTINCT FROM p_parent_folder_id
-              AND (p_parent_folder_id IS NOT NULL OR owner_id = p_owner_id)
-        ) THEN
-            RETURN v_candidate;
-        END IF;
-
-        v_counter := v_counter + 1;
-
-        IF v_counter > 1000 THEN
-            v_candidate := p_folder_name || '_restored (' || substr(md5(random()::text), 1, 8) || ')';
-        ELSE
-            v_candidate := p_folder_name || '_restored (' || v_counter || ')';
-        END IF;
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql;

@@ -98,7 +98,7 @@ class FileOperationsRepository:
         folder_id: uuid.UUID,
         dest_parent_folder_id: uuid.UUID | None,
         *,
-        on_collision: str | None = None,  # 'merge' | 'keep_duplicate' | None
+        on_collision: str | None = "keep_duplicate",  # 'merge' | 'keep_duplicate' | None
         file_mode: str = "keep_both",
         file_decisions: dict[str, Any] | None = None,
     ) -> None:
@@ -118,7 +118,7 @@ class FileOperationsRepository:
         file_id: uuid.UUID,
         dest_parent_folder_id: uuid.UUID | None,
         *,
-        on_collision: str | None = None,  # 'replace' | 'keep_duplicate' | None
+        on_collision: str | None = "keep_duplicate",  # 'replace' | 'keep_duplicate' | None
     ) -> None:
         await conn.fetchval(queries.CALL_MOVE_FILE, file_id, dest_parent_folder_id, on_collision)
 
@@ -131,6 +131,18 @@ class FileOperationsRepository:
     ) -> Optional[dict[str, Any]]:
         row = await conn.fetchrow(
             queries.GET_FOLDER_BY_PARENT_AND_NAME, parent_folder_id, folder_name, owner_id
+        )
+        return self._row_to_dict(row)
+
+    async def get_file_by_parent_and_name(
+        self,
+        conn: AsyncConn,
+        parent_folder_id: uuid.UUID | None,
+        file_name: str,
+        owner_id: uuid.UUID,
+    ) -> Optional[dict[str, Any]]:
+        row = await conn.fetchrow(
+            queries.GET_FILE_BY_PARENT_AND_NAME, parent_folder_id, file_name, owner_id
         )
         return self._row_to_dict(row)
 

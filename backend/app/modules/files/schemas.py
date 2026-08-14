@@ -28,14 +28,14 @@ class FolderCreateRequest(BaseModel):
 
 class FolderMoveRequest(BaseModel):
     parent_folder_id: uuid.UUID | None = None
-    on_collision: Literal["merge", "keep_duplicate"] | None = None
+    on_collision: Literal["merge", "keep_duplicate"] | None = "keep_duplicate"
     file_mode: Literal["keep_both", "replace", "per_file"] = "keep_both"
     file_decisions: dict[str, Literal["keep", "replace"]] = {}
 
 
 class FileMoveRequest(BaseModel):
     parent_folder_id: uuid.UUID | None = None
-    on_collision: Literal["replace", "keep_duplicate"] | None = None
+    on_collision: Literal["replace", "keep_duplicate"] | None = "keep_duplicate"
 
 
 class ShareCreateRequest(BaseModel):

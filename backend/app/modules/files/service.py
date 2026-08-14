@@ -678,8 +678,21 @@ class FileOperationsService:
         current_user: dict[str, Any],
         parent_folder_id: uuid.UUID | None,
         upload_file: UploadFile,
+        on_collision: Literal["replace", "keep_duplicate"] | None = "keep_duplicate",
     ) -> schemas.FileResponse:
         await self._require_parent_access(conn, parent_folder_id, current_user["id"])
+
+        clean_name = sanitize_filename(upload_file.filename or "untitled")
+
+        if on_collision is None:
+            collision = await self.repo.file_exists_by_name(conn, parent_folder_id, current_user["id"], clean_name)
+            if collision:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A file with that name already exists. Resubmit with on_collision set to "
+                    "'replace' (overwrite) or 'keep_duplicate' (add a suffix).",
+                )
+
         # Stream upload without loading the entire file into memory.
         file_obj = upload_file.file
         try:
@@ -713,7 +726,6 @@ class FileOperationsService:
                 return getattr(self._f, "tell")()
 
         file_id = uuid.uuid4()
-        clean_name = sanitize_filename(upload_file.filename or "untitled")
         storage_key = f"storage/{current_user['id']}/{file_id}/{clean_name}"
         reader = _HashingReader(file_obj)
 
@@ -738,21 +750,43 @@ class FileOperationsService:
 
         content_hash = reader.hexdigest() if reader.size > 0 else None
 
+        async def _op():
+            async with conn.transaction():
+                await self.repo.call_lock_naming_scope(conn, parent_folder_id, current_user["id"])
+
+                final_name = clean_name
+                if on_collision == "keep_duplicate":
+                    final_name = await self.repo.resolve_file_name_collision(
+                        conn, parent_folder_id, current_user["id"], clean_name
+                    )
+                elif on_collision == "replace":
+                    existing = await self.repo.get_file_by_parent_and_name(
+                        conn, parent_folder_id, clean_name, current_user["id"]
+                    )
+                    if existing:
+                        await self.repo.trash_file(conn, existing["id"])
+
+                return await self.repo.create_file(
+                    conn,
+                    file_id,
+                    current_user["id"],
+                    parent_folder_id,
+                    storage_key,
+                    final_name,
+                    reader.size,
+                    upload_file.content_type,
+                    content_hash,
+                )
+
         try:
-            row = await self.repo.create_file(
-                conn,
-                file_id,
-                current_user["id"],
-                parent_folder_id,
-                storage_key,
-                upload_file.filename or "untitled",
-                reader.size,
-                upload_file.content_type,
-                content_hash,
-            )
+            row = await self._with_db_retry(_op)
         except asyncpg.UniqueViolationError:
             await self.storage.delete_object(storage_key)
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="File name already exists.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A file with that name already exists. Resubmit with on_collision set to "
+                "'replace' or 'keep_duplicate'.",
+            )
         except asyncpg.CheckViolationError:
             await self.storage.delete_object(storage_key)
             raise HTTPException(
@@ -1311,7 +1345,7 @@ class FileOperationsService:
     ) -> schemas.StorageUsageResponse:
         used = await self.repo.get_storage_usage(conn, current_user["id"])
         quota_row = await self.repo.get_user_storage_quota(conn, current_user["id"])
-        total = quota_row["storage_quota"] if quota_row else settings.STORAGE_QUOTA_BYTES
+        total = quota_row["storage_quota"] if quota_row else getattr(settings, "STORAGE_QUOTA_BYTES", 20 * 1024 ** 3)
         return schemas.StorageUsageResponse(used_bytes=used, total_bytes=total)
 
 

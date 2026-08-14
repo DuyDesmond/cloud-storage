@@ -8,6 +8,11 @@ PROJECT_ROOT = SCRIPT_DIR.parents[3]
 sys.path.append(str(PROJECT_ROOT))
 from app.core import database
 
+"""
+to run this script, DO NOT `cd` INTO THE DIR, type:
+`python -m app.modules.files.tables.apply_tables`
+"""
+
 async def apply_tables():
     await database.init_db_pool()
 

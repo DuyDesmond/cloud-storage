@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 import asyncpg
-from fastapi import APIRouter, Depends, File, UploadFile, status
 from fastapi import APIRouter, Depends, File, UploadFile, status, Request
 
 from app.core.database import get_db_connection
@@ -44,12 +44,13 @@ async def create_folder(
 @router.post("/files", response_model=schemas.FileResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     parent_folder_id: uuid.UUID | None = None,
+    on_collision: Literal["replace", "keep_duplicate"] | None = "keep_duplicate",
     upload_file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     conn: asyncpg.Connection = Depends(get_db_connection),
     service: FileOperationsService = Depends(FileOperationsService),
 ):
-    return await service.upload_file(conn, current_user, parent_folder_id, upload_file)
+    return await service.upload_file(conn, current_user, parent_folder_id, upload_file, on_collision)
 
 @router.post("/upload/presign", response_model=schemas.PresignedUploadResponse)
 async def request_presigned_upload(
