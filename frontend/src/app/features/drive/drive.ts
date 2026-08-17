@@ -120,7 +120,7 @@ export class Drive implements OnInit, OnDestroy {
 
   private subscriptions = new Subscription();
   /** Emits a new context each time the route changes; switchMap cancels previous in-flight request. */
-  private routeChange$ = new Subject<{ section: DriveSection; folderId: string | null }>();
+  private routeChange$ = new Subject<{ folderId: string | null }>();
   /** Prevents double-fetch guard from blocking the very first load. */
   private initialized = false;
 
@@ -135,26 +135,14 @@ export class Drive implements OnInit, OnDestroy {
         switchMap((ctx) => {
           this.isLoading.set(true);
           this.items.set([]);
+          this.canWrite.set(true);
 
-          if (ctx.section === 'shared-with-me' && ctx.folderId === null) {
-            this.canWrite.set(false);
-            return this.fileService.getSharedWithMe().pipe(
-              catchError((err) => {
-                this.handleFetchError(err);
-                return of({ folders: [], files: [] });
-              })
-            );
-          } else {
-            // For root/folder navigation, owners can write; share recipients need permission check
-            // Basic rule: root section can write, shared section cannot at root
-            this.canWrite.set(ctx.section === 'root');
-            return this.fileService.getStorageContents(ctx.folderId).pipe(
-              catchError((err) => {
-                this.handleFetchError(err);
-                return of({ folders: [], files: [] });
-              })
-            );
-          }
+          return this.fileService.getStorageContents(ctx.folderId).pipe(
+            catchError((err) => {
+              this.handleFetchError(err);
+              return of({ folders: [], files: [] });
+            })
+          );
         })
       ).subscribe((data: any) => {
         const folderItems: DriveItem[] = (data.folders ?? []).map((f: any) => ({
@@ -219,39 +207,28 @@ export class Drive implements OnInit, OnDestroy {
     // Remove query params and fragments, then split
     const path = url.split('?')[0].split('#')[0];
     const parts = path.split('/').filter(Boolean); // remove empty strings
-    // parts examples:
-    //   ['drive', 'root']
-    //   ['drive', 'root', 'folder', ':id']
-    //   ['drive', 'shared-with-me']
-    //   ['drive', 'shared-with-me', 'folder', ':id']
-
-    const isShared = parts.includes('shared-with-me');
-    const section: DriveSection = isShared ? 'shared-with-me' : 'root';
     const folderIdx = parts.indexOf('folder');
     const folderId = folderIdx !== -1 ? (parts[folderIdx + 1] ?? null) : null;
 
-    const prevSection = this.currentSection();
     const prevFolderId = this.currentFolderId();
 
     // Skip if nothing changed (prevents double-fetching on router events that aren't navigations)
-    if (this.initialized && prevSection === section && prevFolderId === folderId) return;
+    if (this.initialized && prevFolderId === folderId) return;
     this.initialized = true;
 
-    this.currentSection.set(section);
     this.currentFolderId.set(folderId);
-    this.currentNav.set(section === 'shared-with-me' ? 'shared' : 'home');
+    this.currentNav.set('home');
 
     if (folderId) {
       this.fetchBreadcrumbs(folderId, false);
       document.title = 'Nephos - Loading...';
     } else {
       this.breadcrumbs.set([]);
-      const title = isShared ? 'Shared with me' : 'Cloud Drive';
-      this.pageTitle.set(title);
-      document.title = `Nephos - ${title}`;
+      this.pageTitle.set('Cloud Drive');
+      document.title = `Nephos - Cloud Drive`;
     }
 
-    this.routeChange$.next({ section, folderId });
+    this.routeChange$.next({ folderId });
   }
 
   private fetchBreadcrumbs(folderId: string, isFile: boolean): void {

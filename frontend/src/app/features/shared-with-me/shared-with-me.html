@@ -1,0 +1,66 @@
+<div class="dashboard-wrapper">
+  <app-dashboard-header></app-dashboard-header>
+
+  <div class="workspace-container">
+    <app-side-panel
+      [usedBytes]="usedBytes()"
+      [totalBytes]="totalBytes()"
+      [activeNav]="currentNav()"
+      (navChange)="switchNav($any($event))"
+      (collapsedChange)="onSidebarCollapseChange($event)"
+    ></app-side-panel>
+
+    <main class="main-canvas" [class.sidebar-collapsed]="isSidebarCollapsed()">
+      <section class="content-section">
+        <header class="section-header">
+          @if (breadcrumbs().length > 0) {
+          <nav class="breadcrumb-nav" aria-label="Folder path">
+            <a class="breadcrumb-link" routerLink="/drive/shared-with-me">
+              <mat-icon class="breadcrumb-home-icon">group</mat-icon>
+            </a>
+            @for (crumb of breadcrumbs(); track crumb.id; let last = $last) {
+              <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
+              @if (!last) {
+                <a class="breadcrumb-link" [routerLink]="'/drive/shared-with-me/folder/' + crumb.id">{{ crumb.name }}</a>
+              } @else {
+                <span class="breadcrumb-current">{{ crumb.name }}</span>
+              }
+            }
+          </nav>
+          } @else {
+          <h2>{{ pageTitle() }}</h2>
+          <p>Files and folders shared with you.</p>
+          }
+        </header>
+
+        @if (isLoading()) {
+        <div class="loading-state">
+          <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+          <p class="loading-label">Retrieving contents</p>
+        </div>
+        } @else if (items().length === 0) {
+        <div class="empty-state">
+          <mat-icon class="empty-icon">folder_open</mat-icon>
+          <p class="empty-label">No items have been shared with you.</p>
+        </div>
+        } @else {
+        <div class="cards-grid">
+          @for (item of items(); track item.id) {
+          <app-drive-item-card
+            [item]="item"
+            (open)="onOpenItem($event)"
+            (download)="onDownloadItem($event)"
+            (share)="onShareItem($event)"
+          ></app-drive-item-card>
+          }
+        </div>
+        }
+      </section>
+    </main>
+  </div>
+
+  <app-mobile-bottom-nav
+    [currentNav]="currentNav()"
+    (navChange)="switchNav($any($event))"
+  ></app-mobile-bottom-nav>
+</div>
