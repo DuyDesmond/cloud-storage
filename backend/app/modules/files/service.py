@@ -750,7 +750,7 @@ class FileOperationsService:
 
         content_hash = reader.hexdigest() if reader.size > 0 else None
 
-        async def _op():
+        async def _perform_operation():
             async with conn.transaction():
                 await self.repo.call_lock_naming_scope(conn, parent_folder_id, current_user["id"])
 
@@ -779,7 +779,7 @@ class FileOperationsService:
                 )
 
         try:
-            row = await self._with_db_retry(_op)
+            row = await self._with_db_retry(_perform_operation)
         except asyncpg.UniqueViolationError:
             await self.storage.delete_object(storage_key)
             raise HTTPException(
@@ -818,7 +818,7 @@ class FileOperationsService:
 
         folder_name = folder["folder_name"]
 
-        async def _op():
+        async def _perform_operation():
             async with conn.transaction():
                 await self.repo.move_folder(
                     conn,
@@ -836,7 +836,7 @@ class FileOperationsService:
                 return row
 
         try:
-            row = await self._with_db_retry(_op)
+            row = await self._with_db_retry(_perform_operation)
         except asyncpg.ForeignKeyViolationError:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination folder not found.")
         except asyncpg.CheckViolationError as exc:
@@ -866,7 +866,7 @@ class FileOperationsService:
         self._require_target_live(file_row)
         await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
 
-        async def _op():
+        async def _perform_operation():
             async with conn.transaction():
                 await self.repo.move_file(
                     conn, file_id, payload.parent_folder_id, on_collision=payload.on_collision
@@ -874,7 +874,7 @@ class FileOperationsService:
                 return await self.repo.get_file_by_id(conn, file_id)
 
         try:
-            row = await self._with_db_retry(_op)
+            row = await self._with_db_retry(_perform_operation)
         except asyncpg.ForeignKeyViolationError:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination folder not found.")
         except asyncpg.RaiseError:
@@ -935,7 +935,7 @@ class FileOperationsService:
                 detail="Folder name mút not be empty."
             )
 
-        async def _op():
+        async def _perform_operation():
             async with conn.transaction():
                 await self.repo.call_lock_naming_scope(conn, parent_id, owner_id)
                 new_name = await self.repo.resolve_restored_folder_name(conn, parent_id, owner_id, folder_name)
@@ -947,7 +947,7 @@ class FileOperationsService:
                 return await self.repo.restore_folder(conn, folder_id, new_name)
 
         try:
-            restored = await self._with_db_retry(_op)
+            restored = await self._with_db_retry(_perform_operation)
         except asyncpg.UniqueViolationError:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Name collision during restore; please retry.")
         except asyncpg.DeadlockDetectedError:
@@ -1005,7 +1005,7 @@ class FileOperationsService:
                 detail="File name is missing."
             )
 
-        async def _op():
+        async def _perform_operation():
             async with conn.transaction():
                 await self.repo.call_lock_naming_scope(conn, parent_id, owner_id)
                 new_name = await self.repo.resolve_restored_file_name(conn, parent_id, owner_id, file_name)
@@ -1017,7 +1017,7 @@ class FileOperationsService:
                 return await self.repo.restore_file(conn, file_id, new_name)
 
         try:
-            restored = await self._with_db_retry(_op)
+            restored = await self._with_db_retry(_perform_operation)
         except asyncpg.UniqueViolationError:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Name collision during restore; please retry.")
         except asyncpg.DeadlockDetectedError:

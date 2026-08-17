@@ -21,12 +21,21 @@ async def apply_tables():
         return
 
     tables_file = SCRIPT_DIR / "design_tables.txt"
-    if not tables_file.exists():
+    database_functions_file = SCRIPT_DIR / "db_functions.txt"
+    if not tables_file.exists() :
         print(f" Schema file '{tables_file.name}' not found.")
         await database.close_db_pool()
         return
 
+    check_db_func_exists = True
+    if not database_functions_file.exists() :
+        print(f" Schema file '{database_functions_file.name}' not found.")
+        check_db_func_exists = False
+        # await database.close_db_pool()
+        # return
+
     tables_sql = tables_file.read_text(encoding="utf-8")
+    functions_sql = database_functions_file.read_text(encoding="utf-8")
 
     print("Executing tables script...")
     try:
@@ -35,6 +44,14 @@ async def apply_tables():
                 await connection.execute(tables_sql)
 
         print("Schema applied successfully!")
+
+        if check_db_func_exists:
+            async with database.pool.acquire() as connection:
+                async with connection.transaction():
+                    await connection.execute(functions_sql)
+        else:
+            return
+        print("Functions created successfully!")
 
     except Exception as e:
         print(f" Error applying tables: {e}")
