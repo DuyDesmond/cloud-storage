@@ -20,6 +20,13 @@ class StorageUsageResponse(BaseModel):
     used_bytes: int
     total_bytes: int  # e.g. quota from a config or users table
 
+class BreadcrumbItem(BaseModel):
+    id: str
+    name: str
+
+class BreadcrumbsResponse(BaseModel):
+    breadcrumbs: list[BreadcrumbItem]
+
 
 class FolderCreateRequest(BaseModel):
     folder_name: str = Field(min_length=1, max_length=255)

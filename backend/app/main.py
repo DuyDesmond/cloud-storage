@@ -6,6 +6,7 @@ from app.modules.auth.models import CREATE_USERS_TABLE_SQL
 from app.modules.auth.router import router as auth_router
 from app.modules.files.models import get_file_operations_tables_sql
 from app.modules.files.router import router as file_operations_router
+from app.modules.share.router import router as share_router
 from fastapi.middleware.cors import CORSMiddleware
 import app.modules.auth
 
@@ -29,6 +30,7 @@ app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 # Register routes
 app.include_router(auth_router, prefix=settings.API_STR)
 app.include_router(file_operations_router, prefix=settings.API_STR)
+app.include_router(share_router, prefix=settings.API_STR)
 
 app.add_middleware(
   CORSMiddleware,

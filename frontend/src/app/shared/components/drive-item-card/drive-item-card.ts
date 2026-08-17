@@ -19,6 +19,7 @@ export class DriveItemCard {
   // Outputs for parent drive component actions
   open = output<DriveItem>();
   download = output<DriveItem>();
+  share = output<DriveItem>();
   trash = output<DriveItem>();
   restore = output<DriveItem>();
   permanentDelete = output<DriveItem>();
@@ -50,6 +51,11 @@ export class DriveItemCard {
   onDownload(event: MouseEvent): void {
     event.stopPropagation();
     this.download.emit(this.item());
+  }
+
+  onShare(event: MouseEvent): void {
+    event.stopPropagation();
+    this.share.emit(this.item());
   }
 
   onTrash(event: MouseEvent): void {

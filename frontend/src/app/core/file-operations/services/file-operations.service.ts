@@ -17,6 +17,15 @@ import { StorageContentResponse } from '../../../features/drive/drive';
 
 export const DEFAULT_STORAGE_QUOTA_BYTES = 20 * 1024 ** 3;
 
+export interface BreadcrumbItem {
+  id: string;
+  name: string;
+}
+
+export interface BreadcrumbsResponse {
+  breadcrumbs: BreadcrumbItem[];
+}
+
 export interface BackendFileResponse {
   id: string;
   owner_id: string;
@@ -166,6 +175,21 @@ export class FileOperationsService {
     return this.http.get<StorageContentResponse>(
       FILE_OPERATION_ENDPOINTS.getStorage,
       { params, withCredentials: true },
+    );
+  }
+
+  getSharedWithMe(): Observable<StorageContentResponse> {
+    return this.http.get<StorageContentResponse>(
+      FILE_OPERATION_ENDPOINTS.getSharedWithMe,
+      { withCredentials: true }
+    );
+  }
+
+  getBreadcrumbs(targetId: string, isFile: boolean = false): Observable<BreadcrumbsResponse> {
+    const params = new HttpParams().set('target_id', targetId).set('is_file', isFile.toString());
+    return this.http.get<BreadcrumbsResponse>(
+      FILE_OPERATION_ENDPOINTS.getBreadcrumbs,
+      { params, withCredentials: true }
     );
   }
 

@@ -1382,3 +1382,68 @@ class FileOperationsService:
             folders=[self._as_folder_response(f) for f in folders_raw],
             files=[self._as_file_response(f) for f in files_raw],
         )
+
+    async def get_shared_with_me_contents(
+        self,
+        conn: asyncpg.Connection,
+        current_user: dict[str, Any],
+    ) -> schemas.StorageContentResponse:
+        owner_id = current_user["id"]
+        folders_raw = await self.repo.list_shared_with_me_folders(conn, owner_id)
+        files_raw = await self.repo.list_shared_with_me_files(conn, owner_id)
+        
+        shared_folder_ids = {f["id"] for f in folders_raw}
+        
+        def is_outermost(item: dict[str, Any]) -> bool:
+            path_str = item.get("path")
+            if not path_str:
+                return True
+            path_uuids_str = path_str.replace('_', '-')
+            parts = path_uuids_str.split('.')
+            for part in parts:
+                try:
+                    part_uuid = uuid.UUID(part)
+                    if part_uuid != item["id"] and part_uuid in shared_folder_ids:
+                        return False
+                except ValueError:
+                    pass
+            return True
+
+        folders_filtered = [f for f in folders_raw if is_outermost(f)]
+        files_filtered = [f for f in files_raw if is_outermost(f)]
+
+        return schemas.StorageContentResponse(
+            folders=[self._as_folder_response(f) for f in folders_filtered],
+            files=[self._as_file_response(f) for f in files_filtered],
+        )
+
+    async def get_breadcrumbs(
+        self,
+        conn: asyncpg.Connection,
+        target_id: uuid.UUID,
+        is_file: bool,
+    ) -> list[dict[str, str]]:
+        path_str = await (self.repo.get_path_for_file(conn, target_id) if is_file else self.repo.get_path_for_folder(conn, target_id))
+        if not path_str:
+            return []
+            
+        path_uuids_str = path_str.replace('_', '-')
+        parts = path_uuids_str.split('.')
+        uuids = []
+        for part in parts:
+            try:
+                uuids.append(uuid.UUID(part))
+            except ValueError:
+                pass
+                
+        if not uuids:
+            return []
+            
+        folders = await self.repo.get_folders_by_ids(conn, uuids)
+        folder_dict = {f["id"]: f["folder_name"] for f in folders}
+        
+        result = []
+        for u in uuids:
+            if u in folder_dict:
+                result.append({"id": str(u), "name": folder_dict[u]})
+        return result

@@ -13,7 +13,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { Router } from '@angular/router';
 import { DEFAULT_STORAGE_QUOTA_BYTES } from '../../../core/file-operations/services/file-operations.service';
 
-type SidePanelNavKey = 'home' | 'recent' | 'starred' | 'trash' | '';
+type SidePanelNavKey = 'home' | 'shared' | 'recent' | 'starred' | 'trash' | '';
 
 export type { SidePanelNavKey };
 
@@ -59,9 +59,10 @@ export class SidePanel {
   }
 
   navItems: SidePanelNavItem[] = [
-    { key: 'home', icon: 'home', label: 'Home', route: '/drive' },
-    { key: 'recent', icon: 'schedule', label: 'Recent', route: '/drive' },
-    { key: 'starred', icon: 'star', label: 'Starred', route: '/drive' },
+    { key: 'home', icon: 'home', label: 'Home', route: '/drive/root' },
+    { key: 'shared', icon: 'group', label: 'Shared with me', route: '/drive/shared-with-me' },
+    { key: 'recent', icon: 'schedule', label: 'Recent', route: '/drive/root' },
+    { key: 'starred', icon: 'star', label: 'Starred', route: '/drive/root' },
     { key: 'trash', icon: 'delete', label: 'Trash', route: '/trash' },
   ];
 

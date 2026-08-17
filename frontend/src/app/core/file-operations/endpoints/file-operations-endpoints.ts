@@ -1,6 +1,8 @@
 import { environment } from '../../../../environments/environment';
 
 export const FILE_OPERATION_ENDPOINTS = {
+  getSharedWithMe: `${environment.apiUrl}/api/v1/storage/shared-with-me`,
+  getBreadcrumbs: `${environment.apiUrl}/api/v1/storage/breadcrumbs`,
   uploadFiles: `${environment.apiUrl}/api/v1/storage/files`,
   folders: `${environment.apiUrl}/api/v1/storage/folders`,
   getStorage: `${environment.apiUrl}/api/v1/storage/retrieve`,

@@ -1,6 +1,7 @@
 import {
   DEFAULT_STORAGE_QUOTA_BYTES,
   FileOperationsService,
+  BreadcrumbItem,
 } from '../../core/file-operations/services/file-operations.service';
 import {
   Component,
@@ -11,12 +12,13 @@ import {
   OnDestroy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { Subscription, firstValueFrom } from 'rxjs';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { Subscription, Subject, switchMap, of, catchError, firstValueFrom } from 'rxjs';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import {
   SidePanel,
@@ -33,6 +35,7 @@ import { UploadQueueService } from '../../core/file-operations/services/upload-q
 import { UploadWidget } from '../upload-widget/upload-widget';
 import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
 import { AuthService } from '@core/auth/services/auth.service';
+import { ShareDialog } from '../share-dialog/share-dialog';
 
 export interface Folder {
   id: string;
@@ -66,6 +69,9 @@ export interface StorageContentResponse {
   folders: Folder[];
   files: FileItem[];
 }
+
+type DriveSection = 'root' | 'shared-with-me';
+
 @Component({
   selector: 'app-drive',
   standalone: true,
@@ -75,6 +81,7 @@ export interface StorageContentResponse {
     MatIconModule,
     MatButtonModule,
     MatProgressBarModule,
+    MatSnackBarModule,
     DashboardHeader,
     SidePanel,
     MobileBottomNav,
@@ -94,70 +101,63 @@ export class Drive implements OnInit, OnDestroy {
   usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
   totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
+  // Current navigation state
+  currentSection = signal<DriveSection>('root');
+  currentFolderId = signal<string | null>(null);
+  breadcrumbs = signal<BreadcrumbItem[]>([]);
+  pageTitle = signal<string>('Cloud Drive');
+
+  // Whether the user can upload/create in the current view
+  canWrite = signal<boolean>(true);
+
   private dialog = inject(MatDialog);
+  private snackBar = inject(MatSnackBar);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
   private fileService = inject(FileOperationsService);
   private authService = inject(AuthService);
   public uploadQueueService = inject(UploadQueueService);
 
-  private fileUploadedSub?: Subscription;
+  private subscriptions = new Subscription();
+  /** Emits a new context each time the route changes; switchMap cancels previous in-flight request. */
+  private routeChange$ = new Subject<{ section: DriveSection; folderId: string | null }>();
+  /** Prevents double-fetch guard from blocking the very first load. */
+  private initialized = false;
 
-  // Items structured based on DB schema
-  items = signal<DriveItem[]>([
-    {
-      id: 'f101',
-      ownerId: 'u1',
-      parentFolderId: null,
-      path: 'root',
-      name: 'Q4 Market Report.pdf',
-      itemType: 'file',
-      storageKey: 'users/u1/q4_report.pdf',
-      sizeBytes: 1258291,
-      mimeType: 'application/pdf',
-      contentHash: null,
-      isTrashed: false,
-      trashedAt: null,
-      createdAt: '2023-10-22T15:15:00Z',
-      updatedAt: '2023-10-22T15:15:00Z',
-    },
-    {
-      id: 'd101',
-      ownerId: 'u1',
-      parentFolderId: null,
-      path: 'root',
-      name: 'Project Assets',
-      itemType: 'folder',
-      itemsCount: 12,
-      isTrashed: false,
-      trashedAt: null,
-      createdAt: '2023-09-01T10:00:00Z',
-      updatedAt: '2023-09-18T09:45:00Z',
-    },
-  ]);
+  items = signal<DriveItem[]>([]);
 
   ngOnInit(): void {
-    this.fetchRootContents();
     this.fetchStorageUsage();
 
-    this.fileUploadedSub = this.uploadQueueService.onFileUploaded.subscribe(
-      (newFileItem) => {
-        this.items.update((current) => [newFileItem, ...current]);
-      },
-    );
-  }
+    // switchMap ensures previous fetch is cancelled when route changes (AbortController equivalent)
+    this.subscriptions.add(
+      this.routeChange$.pipe(
+        switchMap((ctx) => {
+          this.isLoading.set(true);
+          this.items.set([]);
 
-  ngOnDestroy(): void {
-    this.fileUploadedSub?.unsubscribe();
-  }
-
-  onSidebarCollapseChange(collapsed: boolean): void {
-    this.isSidebarCollapsed.set(collapsed);
-  }
-
-  fetchRootContents(): void {
-    this.isLoading.set(true);
-    this.fileService.getStorageContents().subscribe({
-      next: (data) => {
-        const folderItems: DriveItem[] = data.folders.map((f) => ({
+          if (ctx.section === 'shared-with-me' && ctx.folderId === null) {
+            this.canWrite.set(false);
+            return this.fileService.getSharedWithMe().pipe(
+              catchError((err) => {
+                this.handleFetchError(err);
+                return of({ folders: [], files: [] });
+              })
+            );
+          } else {
+            // For root/folder navigation, owners can write; share recipients need permission check
+            // Basic rule: root section can write, shared section cannot at root
+            this.canWrite.set(ctx.section === 'root');
+            return this.fileService.getStorageContents(ctx.folderId).pipe(
+              catchError((err) => {
+                this.handleFetchError(err);
+                return of({ folders: [], files: [] });
+              })
+            );
+          }
+        })
+      ).subscribe((data: any) => {
+        const folderItems: DriveItem[] = (data.folders ?? []).map((f: any) => ({
           id: f.id,
           ownerId: f.owner_id,
           parentFolderId: f.parent_folder_id,
@@ -170,7 +170,7 @@ export class Drive implements OnInit, OnDestroy {
           updatedAt: f.updated_at,
         }));
 
-        const fileItems: DriveItem[] = data.files.map((f) => ({
+        const fileItems: DriveItem[] = (data.files ?? []).map((f: any) => ({
           id: f.id,
           ownerId: f.owner_id,
           parentFolderId: f.parent_folder_id,
@@ -189,12 +189,100 @@ export class Drive implements OnInit, OnDestroy {
 
         this.items.set([...folderItems, ...fileItems]);
         this.isLoading.set(false);
+      })
+    );
+
+    // Listen to the full URL to determine context (works across all route patterns)
+    this.subscriptions.add(
+      this.router.events.subscribe(() => {
+        const url = this.router.url;
+        this.resolveContextFromUrl(url);
+      })
+    );
+
+    // Trigger initial load
+    this.resolveContextFromUrl(this.router.url);
+
+    this.subscriptions.add(
+      this.uploadQueueService.onFileUploaded.subscribe((newFileItem) => {
+        this.items.update((current) => [newFileItem, ...current]);
+      })
+    );
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
+    this.routeChange$.complete();
+  }
+
+  private resolveContextFromUrl(url: string): void {
+    // Remove query params and fragments, then split
+    const path = url.split('?')[0].split('#')[0];
+    const parts = path.split('/').filter(Boolean); // remove empty strings
+    // parts examples:
+    //   ['drive', 'root']
+    //   ['drive', 'root', 'folder', ':id']
+    //   ['drive', 'shared-with-me']
+    //   ['drive', 'shared-with-me', 'folder', ':id']
+
+    const isShared = parts.includes('shared-with-me');
+    const section: DriveSection = isShared ? 'shared-with-me' : 'root';
+    const folderIdx = parts.indexOf('folder');
+    const folderId = folderIdx !== -1 ? (parts[folderIdx + 1] ?? null) : null;
+
+    const prevSection = this.currentSection();
+    const prevFolderId = this.currentFolderId();
+
+    // Skip if nothing changed (prevents double-fetching on router events that aren't navigations)
+    if (this.initialized && prevSection === section && prevFolderId === folderId) return;
+    this.initialized = true;
+
+    this.currentSection.set(section);
+    this.currentFolderId.set(folderId);
+    this.currentNav.set(section === 'shared-with-me' ? 'shared' : 'home');
+
+    if (folderId) {
+      this.fetchBreadcrumbs(folderId, false);
+      document.title = 'Nephos - Loading...';
+    } else {
+      this.breadcrumbs.set([]);
+      const title = isShared ? 'Shared with me' : 'Cloud Drive';
+      this.pageTitle.set(title);
+      document.title = `Nephos - ${title}`;
+    }
+
+    this.routeChange$.next({ section, folderId });
+  }
+
+  private fetchBreadcrumbs(folderId: string, isFile: boolean): void {
+    this.fileService.getBreadcrumbs(folderId, isFile).subscribe({
+      next: (res) => {
+        this.breadcrumbs.set(res.breadcrumbs);
+        const last = res.breadcrumbs[res.breadcrumbs.length - 1];
+        if (last) {
+          this.pageTitle.set(last.name);
+          document.title = `Nephos - ${last.name}`;
+        }
       },
-      error: (err) => {
-        console.error('Error fetching drive contents', err);
-        this.isLoading.set(false);
-      },
+      error: () => {
+        this.breadcrumbs.set([]);
+      }
     });
+  }
+
+  private handleFetchError(err: any): void {
+    this.isLoading.set(false);
+    if (err?.status === 403) {
+      this.snackBar.open('Unauthorized: you do not have permission to access this item.', 'Dismiss', { duration: 4000 });
+      this.router.navigateByUrl('/drive/root');
+    } else if (err?.status === 404 || err?.status === 410) {
+      this.snackBar.open('Unavailable: this item no longer exists or has been trashed.', 'Dismiss', { duration: 4000 });
+      this.router.navigateByUrl('/drive/root');
+    }
+  }
+
+  onSidebarCollapseChange(collapsed: boolean): void {
+    this.isSidebarCollapsed.set(collapsed);
   }
 
   fetchStorageUsage(): void {
@@ -220,6 +308,8 @@ export class Drive implements OnInit, OnDestroy {
   }
 
   onUploadTrigger(): void {
+    if (!this.canWrite()) return;
+
     const dialogRef = this.dialog.open(UploadDialog, {
       width: '500px',
       disableClose: false,
@@ -230,15 +320,16 @@ export class Drive implements OnInit, OnDestroy {
       .subscribe((result: UploadDialogResult | undefined) => {
         if (!result) return;
 
+        const parentId = this.currentFolderId() ?? undefined;
         if (result.action === 'upload') {
           if (result.files?.length) {
-            this.uploadFiles(result.files);
+            this.uploadFiles(result.files, parentId);
           }
           if (result.traversedFolders?.length) {
-            this.uploadFolderTree(result.traversedFolders);
+            this.uploadFolderTree(result.traversedFolders, parentId);
           }
         } else if (result.action === 'create-folder' && result.folderName) {
-          this.createFolder(result.folderName);
+          this.createFolder(result.folderName, parentId);
         }
       });
     this.fetchStorageUsage();
@@ -277,8 +368,8 @@ export class Drive implements OnInit, OnDestroy {
     this.fetchStorageUsage();
   }
 
-  private createFolder(folderName: string): void {
-    this.fileService.createFolder(folderName).subscribe({
+  private createFolder(folderName: string, parentFolderId?: string): void {
+    this.fileService.createFolder(folderName, parentFolderId).subscribe({
       next: (folder) => {
         this.items.update((current) => [folder, ...current]);
       },
@@ -292,10 +383,10 @@ export class Drive implements OnInit, OnDestroy {
 
   onOpenItem(item: DriveItem): void {
     if (item.itemType === 'folder') {
-      console.log('Navigating to folder ID:', item.id);
-    } else {
-      console.log('Previewing file:', item.name);
+      const section = this.currentSection();
+      this.router.navigateByUrl(`/drive/${section}/folder/${item.id}`);
     }
+    // File preview: future implementation
   }
 
   onDownloadItem(item: DriveItem): void {
@@ -313,6 +404,13 @@ export class Drive implements OnInit, OnDestroy {
       error: (error) => {
         console.error('Download failed:', error);
       },
+    });
+  }
+
+  onShareItem(item: DriveItem): void {
+    this.dialog.open(ShareDialog, {
+      width: '600px',
+      data: { item },
     });
   }
 

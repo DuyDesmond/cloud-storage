@@ -494,3 +494,15 @@ class FileOperationsRepository:
     ) -> dict[str, Any] | None:
         row = await conn.fetchrow(queries.RESTORE_FOLDER, folder_id, new_folder_name)
         return dict(row) if row else None
+
+    async def list_shared_with_me_folders(self, conn: AsyncConn, user_id: uuid.UUID) -> list[dict[str, Any]]:
+        rows = await conn.fetch(queries.GET_SHARED_WITH_ME_FOLDERS, user_id)
+        return [dict(r) for r in rows]
+
+    async def list_shared_with_me_files(self, conn: AsyncConn, user_id: uuid.UUID) -> list[dict[str, Any]]:
+        rows = await conn.fetch(queries.GET_SHARED_WITH_ME_FILES, user_id)
+        return [dict(r) for r in rows]
+
+    async def get_folders_by_ids(self, conn: AsyncConn, folder_ids: list[uuid.UUID]) -> list[dict[str, Any]]:
+        rows = await conn.fetch(queries.GET_FOLDERS_BY_IDS, folder_ids)
+        return [dict(r) for r in rows]

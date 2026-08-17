@@ -336,3 +336,28 @@ FROM nephos.files
 WHERE owner_id = $1 AND is_trashed = FALSE
   AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
 """
+
+GET_SHARED_WITH_ME_FOLDERS = """
+SELECT f.id, f.owner_id, f.parent_folder_id, f.folder_name, f.path, f.is_trashed, f.trashed_at, f.created_at, f.updated_at
+FROM nephos.folders f
+JOIN nephos.acl_entries acl ON acl.folder_id = f.id
+WHERE acl.grantee_id = $1
+  AND acl.revoked_at IS NULL
+  AND f.is_trashed = FALSE
+"""
+
+GET_SHARED_WITH_ME_FILES = """
+SELECT f.id, f.owner_id, f.parent_folder_id, f.storage_key, f.file_name, f.size_bytes, f.mime_type, f.content_hash,
+       f.path, f.is_trashed, f.trashed_at, f.created_at, f.updated_at
+FROM nephos.files f
+JOIN nephos.acl_entries acl ON acl.file_id = f.id
+WHERE acl.grantee_id = $1
+  AND acl.revoked_at IS NULL
+  AND f.is_trashed = FALSE
+"""
+
+GET_FOLDERS_BY_IDS = """
+SELECT id, folder_name
+FROM nephos.folders
+WHERE id = ANY($1::uuid[])
+"""

@@ -16,7 +16,15 @@
         <mat-icon>download</mat-icon>
         <span>Download</span>
       </button>
-      } @if (isTrashView()) {
+      }
+      @if (!isTrashView()) {
+      <button mat-menu-item (click)="onShare($event)">
+        <mat-icon>share</mat-icon>
+        <span>Share</span>
+      </button>
+      }
+      
+      @if (isTrashView()) {
       <button mat-menu-item (click)="onRestore($event)">
         <mat-icon>restore</mat-icon>
         <span>Restore</span>

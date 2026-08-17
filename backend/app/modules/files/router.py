@@ -23,6 +23,25 @@ async def get_storage_contents(
 ):
     return await service.get_storage_contents(conn, current_user, parent_folder_id)
 
+@router.get("/shared-with-me", response_model=schemas.StorageContentResponse)
+async def get_shared_with_me_contents(
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    return await service.get_shared_with_me_contents(conn, current_user)
+
+@router.get("/breadcrumbs", response_model=schemas.BreadcrumbsResponse)
+async def get_breadcrumbs(
+    target_id: uuid.UUID,
+    is_file: bool = False,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
+    service: FileOperationsService = Depends(FileOperationsService),
+):
+    breadcrumbs = await service.get_breadcrumbs(conn, target_id, is_file)
+    return schemas.BreadcrumbsResponse(breadcrumbs=breadcrumbs)
+
 @router.get("/usage", response_model=schemas.StorageUsageResponse)
 async def get_storage_usage(
     current_user: dict = Depends(get_current_user),

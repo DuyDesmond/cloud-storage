@@ -39,13 +39,21 @@
     .action-btn {
       width: 28px;
       height: 28px;
-      line-height: 28px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       color: #717786;
+      flex-shrink: 0;
 
       mat-icon {
         font-size: 18px;
         width: 18px;
         height: 18px;
+        line-height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
     }
   }
