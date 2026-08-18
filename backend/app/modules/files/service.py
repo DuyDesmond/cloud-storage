@@ -326,6 +326,14 @@ class FileOperationsService:
         payload: schemas.PresignedUploadRequest,
     ) -> schemas.PresignedUploadResponse:
         await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        if payload.size_bytes > 0:
+            has_space = await self.repo.check_storage_available(conn, current_user["id"], payload.size_bytes)
+            if not has_space:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Storage quota exceeded.",
+                )
+
         clean_name = sanitize_filename(payload.file_name)
         storage_key = f"storage/{current_user['id']}/{uuid.uuid4()}/{clean_name}"
 
@@ -377,6 +385,19 @@ class FileOperationsService:
                 detail="Uploaded storage object not found.",
             )
 
+        # Enforce quota check before committing to DB
+        actual_size = payload.size_bytes
+        if head and "ContentLength" in head and head["ContentLength"] > 0:
+            actual_size = head["ContentLength"]
+
+        has_space = await self.repo.check_storage_available(conn, current_user["id"], actual_size)
+        if not has_space:
+            await self.storage.delete_object(payload.storage_key)
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Storage quota exceeded.",
+            )
+
         # If client supplied a checksum, validate against object metadata or ETag
         if payload.content_hash:
             metadata = (head.get("Metadata") or {})
@@ -384,12 +405,15 @@ class FileOperationsService:
             normalized_etag = head_etag.strip('"') if head_etag else None
             if metadata.get("sha256"):
                 if metadata.get("sha256") != payload.content_hash:
+                    await self.storage.delete_object(payload.storage_key)
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Checksum mismatch for uploaded object.")
             elif normalized_etag:
                 if normalized_etag != payload.content_hash:
+                    await self.storage.delete_object(payload.storage_key)
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Checksum mismatch for uploaded object.")
             else:
                 # No checksum available from storage to validate against
+                await self.storage.delete_object(payload.storage_key)
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to validate checksum for uploaded object.")
 
         clean_name = sanitize_filename(payload.file_name)
@@ -411,17 +435,6 @@ class FileOperationsService:
                     clean_name,
                 )
 
-            # file_exists = await self.repo.file_exists_by_name(
-            #     conn, payload.parent_folder_id, current_user["id"], clean_name
-            # )
-
-            # if file_exists:
-            #     final_name = await self.repo.resolve_file_name_collision(
-            #         conn, payload.parent_folder_id, current_user["id"], clean_name
-            #     )
-            # else:
-            #     final_name = clean_name
-
             file_id = uuid.uuid4()
             row = await self.repo.create_file(
                 conn,
@@ -437,6 +450,7 @@ class FileOperationsService:
             return row
 
         row = await self._with_db_retry(_do_create)
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return self._as_file_response(row)
 
     async def initiate_multipart_upload(
@@ -446,6 +460,14 @@ class FileOperationsService:
         payload: schemas.InitiateMultipartUploadRequest,
     ) -> schemas.InitiateMultipartUploadResponse:
         await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        if payload.size_bytes > 0:
+            has_space = await self.repo.check_storage_available(conn, current_user["id"], payload.size_bytes)
+            if not has_space:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Storage quota exceeded.",
+                )
+
         clean_name = sanitize_filename(payload.file_name)
         storage_key = f"storage/{current_user['id']}/{uuid.uuid4()}/{clean_name}"
 
@@ -498,6 +520,19 @@ class FileOperationsService:
                 detail="Invalid storage key for current user.",
             )
 
+        if payload.size_bytes > 0:
+            has_space = await self.repo.check_storage_available(conn, current_user["id"], payload.size_bytes)
+            if not has_space:
+                await self.storage.abort_multipart_upload(
+                    object_name=payload.storage_key,
+                    upload_id=payload.upload_id,
+                )
+                await self.storage.delete_object(payload.storage_key)
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Storage quota exceeded.",
+                )
+
         parts_formatted = []
         for p in payload.parts:
             etag = p.etag
@@ -530,17 +565,6 @@ class FileOperationsService:
                     clean_name,
                 )
 
-            # file_exists = await self.repo.file_exists_by_name(
-            #     conn, payload.parent_folder_id, current_user["id"], clean_name
-            # )
-
-            # if file_exists:
-            #     final_name = await self.repo.resolve_file_name_collision(
-            #         conn, payload.parent_folder_id, current_user["id"], clean_name
-            #     )
-            # else:
-            #     final_name = clean_name
-
             file_id = uuid.uuid4()
             row = await self.repo.create_file(
                 conn,
@@ -556,6 +580,7 @@ class FileOperationsService:
             return row
 
         row = await self._with_db_retry(_do_create)
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return self._as_file_response(row)
 
     async def abort_multipart_upload(
@@ -750,6 +775,14 @@ class FileOperationsService:
 
         content_hash = reader.hexdigest() if reader.size > 0 else None
 
+        has_space = await self.repo.check_storage_available(conn, current_user["id"], reader.size)
+        if not has_space:
+            await self.storage.delete_object(storage_key)
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Storage quota exceeded.",
+            )
+
         async def _perform_operation():
             async with conn.transaction():
                 await self.repo.call_lock_naming_scope(conn, parent_folder_id, current_user["id"])
@@ -797,6 +830,7 @@ class FileOperationsService:
             await self.storage.delete_object(storage_key)
             raise
 
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return self._as_file_response(row)
 
     async def move_folder(
@@ -904,6 +938,7 @@ class FileOperationsService:
         row = await self.repo.trash_folder(conn, folder_id)
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return schemas.MessageResponse(message="Folder moved to trash.")
 
     async def restore_folder(
@@ -922,6 +957,7 @@ class FileOperationsService:
         parent_id = folder.get("parent_folder_id")
         owner_id = folder.get("owner_id")
         folder_name = folder.get("folder_name")
+        folder_path = folder.get("path")
 
         if not owner_id:
             raise HTTPException(
@@ -932,18 +968,28 @@ class FileOperationsService:
         if not folder_name:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Folder name mút not be empty."
+                detail="Folder name must not be empty."
             )
+
+        if folder_path:
+            trashed_size = await self.repo.get_folder_trashed_size(conn, folder_path)
+            if trashed_size > 0:
+                has_space = await self.repo.check_storage_available(conn, current_user["id"], trashed_size)
+                if not has_space:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="Storage quota exceeded.",
+                    )
 
         async def _perform_operation():
             async with conn.transaction():
                 await self.repo.call_lock_naming_scope(conn, parent_id, owner_id)
                 new_name = await self.repo.resolve_restored_folder_name(conn, parent_id, owner_id, folder_name)
                 if new_name is None:
-                            raise HTTPException(
-                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                detail="Could not resolve a valid name for the restored folder."
-                            )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Could not resolve a valid name for the restored folder."
+                    )
                 return await self.repo.restore_folder(conn, folder_id, new_name)
 
         try:
@@ -956,6 +1002,7 @@ class FileOperationsService:
         if not restored:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to restore folder.")
 
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return self._as_folder_response(restored)
 
     async def delete_file(
@@ -974,6 +1021,7 @@ class FileOperationsService:
         row = await self.repo.trash_file(conn, file_id)
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return schemas.MessageResponse(message="File moved to trash.")
 
     async def restore_file(
@@ -988,6 +1036,15 @@ class FileOperationsService:
         self._require_owner(file_row, current_user["id"])
         if not file_row["is_trashed"]:
             return self._as_file_response(file_row)
+
+        file_size = file_row.get("size_bytes", 0)
+        if file_size > 0:
+            has_space = await self.repo.check_storage_available(conn, current_user["id"], file_size)
+            if not has_space:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Storage quota exceeded.",
+                )
 
         parent_id = file_row.get("parent_folder_id")
         owner_id = file_row.get("owner_id")
@@ -1010,10 +1067,10 @@ class FileOperationsService:
                 await self.repo.call_lock_naming_scope(conn, parent_id, owner_id)
                 new_name = await self.repo.resolve_restored_file_name(conn, parent_id, owner_id, file_name)
                 if new_name is None:
-                            raise HTTPException(
-                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                detail="Could not resolve a valid name for the restored file."
-                            )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Could not resolve a valid name for the restored file."
+                    )
                 return await self.repo.restore_file(conn, file_id, new_name)
 
         try:
@@ -1026,6 +1083,7 @@ class FileOperationsService:
         if not restored:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to restore file.")
 
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return self._as_file_response(restored)
 
     async def share_item(
@@ -1169,6 +1227,7 @@ class FileOperationsService:
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file row.") from exc
 
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return schemas.MessageResponse(message="File permanently deleted.")
 
     async def hard_delete_folder(
@@ -1214,6 +1273,7 @@ class FileOperationsService:
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete folder rows.") from exc
 
+        await self.repo.recalculate_user_storage(conn, current_user["id"])
         return schemas.MessageResponse(message="Folder and contents permanently deleted.")
 
     async def hard_delete_all_trash(
@@ -1252,6 +1312,7 @@ class FileOperationsService:
         async with conn.transaction():
             await self.repo.delete_trashed_folders_by_owner(conn, owner_id)
 
+        await self.repo.recalculate_user_storage(conn, owner_id)
         return schemas.MessageResponse(message="Trash emptied (permanently deleted).")
 
     async def _require_view_access(

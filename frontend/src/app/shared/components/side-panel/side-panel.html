@@ -32,17 +32,19 @@
     </button>
   </div>
 
-  <div class="storage-summary" [@ngIf]="!isLoading()">
-    <h2>Cloud Storage</h2>
-    <p class="storage-text">
-      <span class="bold">{{ usedStorageGB().toFixed(2) }} GB</span> of {{
-      totalStorageGB().toFixed(2) }} GB used
-    </p>
-    <mat-progress-bar
-      mode="determinate"
-      [value]="storagePercentage()"
-    ></mat-progress-bar>
-  </div>
+  @if (!storageState.isLoading()) {
+    <div class="storage-summary">
+      <h2>Cloud Storage</h2>
+      <p class="storage-text">
+        <span class="bold">{{ storageState.usedStorageGB().toFixed(2) }} GB</span> of {{
+        storageState.totalStorageGB().toFixed(2) }} GB used
+      </p>
+      <mat-progress-bar
+        mode="determinate"
+        [value]="storageState.storagePercentage()"
+      ></mat-progress-bar>
+    </div>
+  }
 
   <nav class="nav-links">
     @for (item of navItems; track item.key) {

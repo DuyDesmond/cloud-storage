@@ -5,9 +5,9 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import {
-  DEFAULT_STORAGE_QUOTA_BYTES,
   FileOperationsService,
 } from '../../core/file-operations/services/file-operations.service';
+import { StorageStateService } from '../../core/file-operations/services/storage-state.service';
 import { DriveItem } from '../../shared/components/drive-item-card/drive-item.model';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import {
@@ -24,7 +24,7 @@ import {
 import { MatDialog } from '@angular/material/dialog';
 import { UploadQueueService } from '@core/file-operations/services/upload-queue-service';
 import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
-import { firstValueFrom, Subscription } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 import { AuthService } from '@core/auth/services/auth.service';
 
 @Component({
@@ -45,18 +45,15 @@ import { AuthService } from '@core/auth/services/auth.service';
   templateUrl: './trash.html',
   styleUrls: ['./trash.scss'],
 })
-export class Trash {
+export class Trash implements OnInit {
   private fileService = inject(FileOperationsService);
   private snackBar = inject(MatSnackBar);
+  readonly storageState = inject(StorageStateService);
 
   // State signals
   isLoading = signal<boolean>(false);
   isSidebarCollapsed = signal<boolean>(false);
   currentNav = signal<SidePanelNavKey>('trash');
-  usedBytes = signal<number>(0);
-  totalBytes = signal<number>(DEFAULT_STORAGE_QUOTA_BYTES);
-  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
-  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   items = signal<DriveItem[]>([]);
   hasItems = computed(() => this.items().length > 0);
@@ -66,7 +63,7 @@ export class Trash {
 
   ngOnInit(): void {
     this.loadTrashedItems();
-    this.fetchStorageUsage();
+    this.storageState.refreshStorageUsage();
   }
 
   loadTrashedItems(): void {
@@ -87,18 +84,6 @@ export class Trash {
     });
   }
 
-  fetchStorageUsage(): void {
-    this.fileService.getStorageUsage().subscribe({
-      next: ({ used_bytes }) => {
-        this.usedBytes.set(used_bytes);
-        this.totalBytes.set(
-          this.authService.currentUser()?.storage_quota ??
-            DEFAULT_STORAGE_QUOTA_BYTES,
-        );
-      },
-    });
-  }
-
   onRestoreItem(item: DriveItem): void {
     const action$: any =
       item.itemType === 'folder'
@@ -111,13 +96,16 @@ export class Trash {
         this.snackBar.open(`${item.name} restored.`, 'Close', {
           duration: 2500,
         });
+        this.storageState.refreshStorageUsage();
       },
-      error: () =>
-        this.snackBar.open('Failed to restore item.', 'Close', {
-          duration: 3000,
-        }),
+      error: (err: any) => {
+        const errorMsg =
+          err?.error?.detail || err?.message || 'Failed to restore item.';
+        this.snackBar.open(errorMsg, 'Close', {
+          duration: 4000,
+        });
+      },
     });
-    this.fetchStorageUsage();
   }
 
   onPermanentDeleteItem(item: DriveItem): void {
@@ -137,13 +125,16 @@ export class Trash {
         this.snackBar.open(`${item.name} permanently deleted.`, 'Close', {
           duration: 2500,
         });
+        this.storageState.refreshStorageUsage();
       },
-      error: () =>
-        this.snackBar.open('Failed to delete item permanently.', 'Close', {
+      error: (err: any) => {
+        const errorMsg =
+          err?.error?.detail || err?.message || 'Failed to delete item permanently.';
+        this.snackBar.open(errorMsg, 'Close', {
           duration: 3000,
-        }),
+        });
+      },
     });
-    this.fetchStorageUsage();
   }
 
   onEmptyTrash(): void {
@@ -163,15 +154,17 @@ export class Trash {
         this.snackBar.open('Trash emptied successfully.', 'Close', {
           duration: 2500,
         });
+        this.storageState.refreshStorageUsage();
       },
-      error: () => {
+      error: (err: any) => {
         this.isLoading.set(false);
-        this.snackBar.open('Failed to empty trash.', 'Close', {
+        const errorMsg =
+          err?.error?.detail || err?.message || 'Failed to empty trash.';
+        this.snackBar.open(errorMsg, 'Close', {
           duration: 3000,
         });
       },
     });
-    this.fetchStorageUsage();
   }
 
   switchNav(nav: SidePanelNavKey) {
@@ -204,13 +197,11 @@ export class Trash {
           this.createFolder(result.folderName);
         }
       });
-    this.fetchStorageUsage();
   }
 
   private uploadFiles(files: File[], parentFolderId?: string): void {
     if (files.length === 0) return;
     this.uploadQueueService.enqueueFiles(files, parentFolderId);
-    this.fetchStorageUsage();
   }
 
   private async uploadFolderTree(
@@ -236,8 +227,6 @@ export class Trash {
         console.error(`Failed to create folder ${folder.name}`, err);
       }
     }
-
-    this.fetchStorageUsage();
   }
 
   private createFolder(folderName: string): void {
@@ -249,7 +238,5 @@ export class Trash {
         console.error('Create folder failed:', error);
       },
     });
-
-    this.fetchStorageUsage();
   }
 }

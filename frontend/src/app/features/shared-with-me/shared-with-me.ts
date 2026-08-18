@@ -1,4 +1,4 @@
-﻿import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -8,7 +8,8 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subscription, Subject, switchMap, of, catchError } from 'rxjs';
 
-import { DEFAULT_STORAGE_QUOTA_BYTES, FileOperationsService, BreadcrumbItem } from '../../core/file-operations/services/file-operations.service';
+import { FileOperationsService, BreadcrumbItem } from '../../core/file-operations/services/file-operations.service';
+import { StorageStateService } from '../../core/file-operations/services/storage-state.service';
 import { AuthService } from '@core/auth/services/auth.service';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import { SidePanel, SidePanelNavKey } from '../../shared/components/side-panel/side-panel';
@@ -29,12 +30,11 @@ import { ShareDialog } from '../share-dialog/share-dialog';
   styleUrls: ['../drive/drive.scss'] // Reusing drive layout styles
 })
 export class SharedWithMe implements OnInit, OnDestroy {
+  readonly storageState = inject(StorageStateService);
+
   currentNav = signal<SidePanelNavKey>('shared');
   isLoading = signal<boolean>(false);
   isSidebarCollapsed = signal<boolean>(false);
-
-  usedBytes = signal<number>(0);
-  totalBytes = signal<number>(DEFAULT_STORAGE_QUOTA_BYTES);
 
   currentFolderId = signal<string | null>(null);
   breadcrumbs = signal<BreadcrumbItem[]>([]);
@@ -53,7 +53,7 @@ export class SharedWithMe implements OnInit, OnDestroy {
   items = signal<DriveItem[]>([]);
 
   ngOnInit(): void {
-    this.fetchStorageUsage();
+    this.storageState.refreshStorageUsage();
 
     this.subscriptions.add(
       this.routeChange$.pipe(
@@ -163,15 +163,6 @@ export class SharedWithMe implements OnInit, OnDestroy {
     this.isLoading.set(false);
     this.snackBar.open('Unable to access this shared item.', 'Dismiss', { duration: 4000 });
     this.router.navigateByUrl('/drive/shared-with-me');
-  }
-
-  fetchStorageUsage(): void {
-    this.fileService.getStorageUsage().subscribe({
-      next: ({ used_bytes }) => {
-        this.usedBytes.set(used_bytes);
-        this.totalBytes.set(this.authService.currentUser()?.storage_quota ?? DEFAULT_STORAGE_QUOTA_BYTES);
-      },
-    });
   }
 
   switchNav(nav: SidePanelNavKey) {

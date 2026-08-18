@@ -30,6 +30,9 @@ class FileOperationsRepository:
     ) -> bool:
         return bool(await conn.fetchval(queries.CHECK_STORAGE_AVAILABLE, owner_id, requested_bytes))
 
+    async def get_folder_trashed_size(self, conn: AsyncConn, folder_path: str) -> int:
+        return await conn.fetchval(queries.GET_FOLDER_TRASHED_SIZE, folder_path) or 0
+
     async def recalculate_user_storage(self, conn: AsyncConn, owner_id: uuid.UUID) -> int:
         return await conn.fetchval(queries.RECALCULATE_USER_STORAGE, owner_id) or 0
 

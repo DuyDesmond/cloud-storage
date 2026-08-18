@@ -216,7 +216,8 @@ export class UploadQueueService {
         await this.uploadSingleFile(item);
       }
     } catch (err: any) {
-      const errorMsg = err?.message || 'Upload failed due to network error.';
+      const errorMsg =
+        err?.error?.detail || err?.message || 'Upload failed due to network error.';
       this.updateItemState(id, {
         status: 'error',
         errorMessage: errorMsg,
@@ -457,7 +458,10 @@ export class UploadQueueService {
     while (true) {
       try {
         return await fn();
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.status && err.status >= 400 && err.status < 500) {
+          throw err;
+        }
         attempt++;
         if (attempt >= maxRetries) {
           throw err;

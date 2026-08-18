@@ -6,8 +6,6 @@
   <div class="workspace-container">
     <!-- Side Panel handles storage & main file views -->
     <app-side-panel
-      [usedBytes]="usedBytes()"
-      [totalBytes]="totalBytes()"
       [activeNav]="activeSideNav()"
       (navChange)="switchNav($event)"
     ></app-side-panel>
@@ -51,21 +49,21 @@
             <div class="storage-details">
               <div class="storage-numbers">
                 <p class="huge-text">
-                  {{ usedStorageGB().toFixed(2) }}<span class="unit">GB</span>
+                  {{ storageState.usedStorageGB().toFixed(2) }}<span class="unit">GB</span>
                 </p>
                 <p class="sub-text">
-                  Used of {{ totalStorageGB().toFixed(2) }} GB total
+                  Used of {{ storageState.totalStorageGB().toFixed(2) }} GB total
                 </p>
               </div>
 
               <div class="progress-container">
                 <mat-progress-bar
                   mode="determinate"
-                  [value]="storagePercentage()"
+                  [value]="storageState.storagePercentage()"
                 ></mat-progress-bar>
               </div>
 
-              <div class="category-grid">
+              <!-- <div class="category-grid">
                 @for (cat of storageCategories(); track cat.name) {
                 <div class="category-tile">
                   <mat-icon [class]="cat.colorClass">{{ cat.icon }}</mat-icon>
@@ -73,7 +71,7 @@
                   <strong class="cat-size">{{ cat.size }}</strong>
                 </div>
                 }
-              </div>
+              </div> -->
             </div>
           </div>
         </div>

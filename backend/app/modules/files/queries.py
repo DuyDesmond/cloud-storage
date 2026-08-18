@@ -24,9 +24,21 @@ GET_USER_STORAGE_QUOTA = """
 """
 
 CHECK_STORAGE_AVAILABLE = """
-    SELECT (storage_used + $2) <= storage_quota AS has_space
+    SELECT (
+        COALESCE((
+            SELECT SUM(size_bytes)
+            FROM nephos.files
+            WHERE owner_id = $1 AND is_trashed = FALSE
+        ), 0) + $2
+    ) <= COALESCE(storage_quota, 21474836480) AS has_space
     FROM nephos.users
     WHERE id = $1
+"""
+
+GET_FOLDER_TRASHED_SIZE = """
+    SELECT COALESCE(SUM(size_bytes), 0)::BIGINT AS total_bytes
+    FROM nephos.files
+    WHERE path <@ $1 AND is_trashed = TRUE
 """
 
 RECALCULATE_USER_STORAGE = """

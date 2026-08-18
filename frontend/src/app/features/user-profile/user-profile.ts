@@ -1,8 +1,7 @@
 import {
-  DEFAULT_STORAGE_QUOTA_BYTES,
   FileOperationsService,
 } from '../../core/file-operations/services/file-operations.service';
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -15,6 +14,8 @@ import {
 import { AuthService } from '@core/auth/services/auth.service';
 import { Router } from '@angular/router';
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
+import { StorageStateService } from '../../core/file-operations/services/storage-state.service';
+import { MatSnackBar } from '@angular/material/snack-bar';
 
 export interface StorageCategory {
   name: string;
@@ -53,10 +54,12 @@ export type ActionKey =
   templateUrl: './user-profile.html',
   styleUrls: ['./user-profile.scss'],
 })
-export class UserProfile {
+export class UserProfile implements OnInit {
   private authService = inject(AuthService);
   private router = inject(Router);
   private fileService = inject(FileOperationsService);
+  private snackBar = inject(MatSnackBar);
+  readonly storageState = inject(StorageStateService);
 
   currentUser = this.authService.currentUser;
   userName = computed(() => this.currentUser()?.full_name ?? 'Guest User');
@@ -66,20 +69,10 @@ export class UserProfile {
   activeSideNav = signal<SidePanelNavKey>('');
   isProfileActive = signal<boolean>(true);
 
-  user = signal({
+  user = computed(() => ({
     name: this.userName(),
     email: this.userEmail(),
-  });
-
-  usedBytes = signal<number>(0);
-  totalBytes = signal<number>(DEFAULT_STORAGE_QUOTA_BYTES);
-  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
-  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
-  storagePercentage = computed(() => {
-    const total = this.totalStorageGB();
-    if (!total) return 0;
-    return Math.min(100, Math.round((this.usedStorageGB() / total) * 100));
-  });
+  }));
 
   storageCategories = signal<StorageCategory[]>([
     {
@@ -142,15 +135,8 @@ export class UserProfile {
     },
   ]);
 
-  fetchStorageUsage(): void {
-    this.fileService.getStorageUsage().subscribe({
-      next: ({ used_bytes }) => {
-        this.usedBytes.set(used_bytes);
-        this.totalBytes.set(
-          this.currentUser()?.storage_quota ?? DEFAULT_STORAGE_QUOTA_BYTES,
-        );
-      },
-    });
+  ngOnInit(): void {
+    this.storageState.refreshStorageUsage();
   }
 
   // Triggered when user clicks the profile icon in app-dashboard-header

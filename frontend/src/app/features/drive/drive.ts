@@ -1,8 +1,8 @@
 import {
-  DEFAULT_STORAGE_QUOTA_BYTES,
   FileOperationsService,
   BreadcrumbItem,
 } from '../../core/file-operations/services/file-operations.service';
+import { StorageStateService } from '../../core/file-operations/services/storage-state.service';
 import {
   Component,
   inject,
@@ -92,14 +92,11 @@ type DriveSection = 'root' | 'shared-with-me';
   styleUrls: ['./drive.scss'],
 })
 export class Drive implements OnInit, OnDestroy {
+  readonly storageState = inject(StorageStateService);
+
   currentNav = signal<SidePanelNavKey>('home');
   isLoading = signal<boolean>(false);
   isSidebarCollapsed = signal<boolean>(false);
-
-  usedBytes = signal<number>(0);
-  totalBytes = signal<number>(DEFAULT_STORAGE_QUOTA_BYTES);
-  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
-  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
 
   // Current navigation state
   currentSection = signal<DriveSection>('root');
@@ -127,7 +124,7 @@ export class Drive implements OnInit, OnDestroy {
   items = signal<DriveItem[]>([]);
 
   ngOnInit(): void {
-    this.fetchStorageUsage();
+    this.storageState.refreshStorageUsage();
 
     // switchMap ensures previous fetch is cancelled when route changes (AbortController equivalent)
     this.subscriptions.add(
@@ -262,24 +259,6 @@ export class Drive implements OnInit, OnDestroy {
     this.isSidebarCollapsed.set(collapsed);
   }
 
-  fetchStorageUsage(): void {
-    this.fileService.getStorageUsage().subscribe({
-      next: ({ used_bytes }) => {
-        this.usedBytes.set(used_bytes);
-        this.totalBytes.set(
-          this.authService.currentUser()?.storage_quota ??
-            DEFAULT_STORAGE_QUOTA_BYTES,
-        );
-      },
-    });
-  }
-
-  storagePercentage = computed(() => {
-    const total = this.totalStorageGB();
-    if (!total) return 0;
-    return Math.min(100, Math.round((this.usedStorageGB() / total) * 100));
-  });
-
   switchNav(nav: SidePanelNavKey) {
     this.currentNav.set(nav);
   }
@@ -309,13 +288,11 @@ export class Drive implements OnInit, OnDestroy {
           this.createFolder(result.folderName, parentId);
         }
       });
-    this.fetchStorageUsage();
   }
 
   private uploadFiles(files: File[], parentFolderId?: string): void {
     if (files.length === 0) return;
     this.uploadQueueService.enqueueFiles(files, parentFolderId);
-    this.fetchStorageUsage();
   }
 
   private async uploadFolderTree(
@@ -341,8 +318,6 @@ export class Drive implements OnInit, OnDestroy {
         console.error(`Failed to create folder ${folder.name}`, err);
       }
     }
-
-    this.fetchStorageUsage();
   }
 
   private createFolder(folderName: string, parentFolderId?: string): void {
@@ -354,8 +329,6 @@ export class Drive implements OnInit, OnDestroy {
         console.error('Create folder failed:', error);
       },
     });
-
-    this.fetchStorageUsage();
   }
 
   onOpenItem(item: DriveItem): void {
@@ -398,6 +371,7 @@ export class Drive implements OnInit, OnDestroy {
           this.items.update((current) =>
             current.filter((entry) => entry.id !== item.id),
           );
+          this.storageState.refreshStorageUsage();
         },
         error: (error) => {
           console.error('Trash file failed:', error);
@@ -409,12 +383,12 @@ export class Drive implements OnInit, OnDestroy {
           this.items.update((current) =>
             current.filter((entry) => entry.id !== item.id),
           );
+          this.storageState.refreshStorageUsage();
         },
         error: (error) => {
           console.error('Trash folder failed:', error);
         },
       });
     }
-    this.fetchStorageUsage();
   }
 }

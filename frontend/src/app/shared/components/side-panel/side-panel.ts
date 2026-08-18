@@ -13,6 +13,8 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { Router } from '@angular/router';
 import { DEFAULT_STORAGE_QUOTA_BYTES } from '../../../core/file-operations/services/file-operations.service';
 
+import { StorageStateService } from '../../../core/file-operations/services/storage-state.service';
+
 type SidePanelNavKey = 'home' | 'shared' | 'recent' | 'starred' | 'trash' | '';
 
 export type { SidePanelNavKey };
@@ -37,26 +39,15 @@ export interface SidePanelNavItem {
 })
 export class SidePanel {
   private router = inject(Router);
+  readonly storageState = inject(StorageStateService);
+
   activeNav = input<SidePanelNavKey>('home');
   navChange = output<SidePanelNavKey>();
   upgrade = output<void>();
   upload = output<void>();
 
-  usedBytes = input<number>(0);
-  totalBytes = input<number>(DEFAULT_STORAGE_QUOTA_BYTES);
-  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
-  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
-
   isCollapsed = signal<boolean>(false);
   collapsedChange = output<boolean>();
-
-  isLoading = signal<boolean>(true);
-
-  ngOnChanges() {
-    if (this.usedBytes() && this.totalBytes()) {
-      this.isLoading.set(false);
-    }
-  }
 
   navItems: SidePanelNavItem[] = [
     { key: 'home', icon: 'home', label: 'Home', route: '/drive/root' },
@@ -65,12 +56,6 @@ export class SidePanel {
     { key: 'starred', icon: 'star', label: 'Starred', route: '/drive/root' },
     { key: 'trash', icon: 'delete', label: 'Trash', route: '/trash' },
   ];
-
-  storagePercentage(): number {
-    const total = this.totalStorageGB();
-    if (!total) return 0;
-    return Math.min(100, Math.round((this.usedStorageGB() / total) * 100));
-  }
 
   toggleCollapse(): void {
     this.isCollapsed.update((val: boolean) => !val);
