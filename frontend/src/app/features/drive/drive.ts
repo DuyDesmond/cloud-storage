@@ -37,6 +37,8 @@ import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
 import { AuthService } from '@core/auth/services/auth.service';
 import { ShareDialog } from '../share-dialog/share-dialog';
 
+import { Breadcrumb } from '../../shared/components/breadcrumb/breadcrumb';
+
 export interface Folder {
   id: string;
   owner_id: string;
@@ -87,6 +89,7 @@ type DriveSection = 'root' | 'shared-with-me';
     MobileBottomNav,
     DriveItemCard,
     UploadWidget,
+    Breadcrumb,
   ],
   templateUrl: './drive.html',
   styleUrls: ['./drive.scss'],

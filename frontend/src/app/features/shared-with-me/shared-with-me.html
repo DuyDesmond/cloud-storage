@@ -11,24 +11,12 @@
     <main class="main-canvas" [class.sidebar-collapsed]="isSidebarCollapsed()">
       <section class="content-section">
         <header class="section-header">
-          @if (breadcrumbs().length > 0) {
-          <nav class="breadcrumb-nav" aria-label="Folder path">
-            <a class="breadcrumb-link" routerLink="/drive/shared-with-me">
-              <mat-icon class="breadcrumb-home-icon">group</mat-icon>
-            </a>
-            @for (crumb of breadcrumbs(); track crumb.id; let last = $last) {
-              <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-              @if (!last) {
-                <a class="breadcrumb-link" [routerLink]="'/drive/shared-with-me/folder/' + crumb.id">{{ crumb.name }}</a>
-              } @else {
-                <span class="breadcrumb-current">{{ crumb.name }}</span>
-              }
-            }
-          </nav>
-          } @else {
-          <h2>{{ pageTitle() }}</h2>
-          <p>Files and folders shared with you.</p>
-          }
+          <app-breadcrumb
+            [breadcrumbs]="breadcrumbs()"
+            section="shared-with-me"
+            [title]="pageTitle()"
+            description="Files and folders shared with you.">
+          </app-breadcrumb>
         </header>
 
         @if (isLoading()) {

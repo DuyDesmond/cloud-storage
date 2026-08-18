@@ -12,25 +12,12 @@
     <main class="main-canvas" [class.sidebar-collapsed]="isSidebarCollapsed()">
       <section class="content-section">
         <header class="section-header">
-          <!-- Breadcrumbs -->
-          @if (breadcrumbs().length > 0) {
-          <nav class="breadcrumb-nav" aria-label="Folder path">
-            <a class="breadcrumb-link" [routerLink]="currentSection() === 'shared-with-me' ? '/drive/shared-with-me' : '/drive/root'">
-              <mat-icon class="breadcrumb-home-icon">{{ currentSection() === 'shared-with-me' ? 'group' : 'home' }}</mat-icon>
-            </a>
-            @for (crumb of breadcrumbs(); track crumb.id; let last = $last) {
-              <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-              @if (!last) {
-                <a class="breadcrumb-link" [routerLink]="'/drive/' + currentSection() + '/folder/' + crumb.id">{{ crumb.name }}</a>
-              } @else {
-                <span class="breadcrumb-current">{{ crumb.name }}</span>
-              }
-            }
-          </nav>
-          } @else {
-          <h2>{{ pageTitle() }}</h2>
-          <p>{{ currentSection() === 'shared-with-me' ? 'Files and folders shared with you.' : 'Access your stored files and folders.' }}</p>
-          }
+          <app-breadcrumb
+            [breadcrumbs]="breadcrumbs()"
+            [section]="currentSection() === 'shared-with-me' ? 'shared-with-me' : 'drive'"
+            [title]="pageTitle()"
+            [description]="currentSection() === 'shared-with-me' ? 'Files and folders shared with you.' : 'Access your stored files and folders.'">
+          </app-breadcrumb>
         </header>
 
         @if (isLoading()) {

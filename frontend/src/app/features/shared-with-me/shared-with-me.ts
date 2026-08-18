@@ -17,14 +17,14 @@ import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobil
 import { DriveItemCard } from '../../shared/components/drive-item-card/drive-item-card';
 import { DriveItem } from '../../shared/components/drive-item-card/drive-item.model';
 import { ShareDialog } from '../share-dialog/share-dialog';
-
+import { Breadcrumb } from '../../shared/components/breadcrumb/breadcrumb';
 @Component({
   selector: 'app-shared-with-me',
   standalone: true,
   imports: [
     CommonModule, RouterModule, MatIconModule, MatButtonModule,
     MatProgressBarModule, MatSnackBarModule, DashboardHeader,
-    SidePanel, MobileBottomNav, DriveItemCard
+    SidePanel, MobileBottomNav, DriveItemCard, Breadcrumb
   ],
   templateUrl: './shared-with-me.html',
   styleUrls: ['../drive/drive.scss'] // Reusing drive layout styles
