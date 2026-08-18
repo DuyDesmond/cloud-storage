@@ -1,4 +1,4 @@
-@import "../drive/drive.scss"; // Inherit baseline canvas layout styles
+@use "../drive/drive.scss" as *; // Inherit baseline canvas layout styles
 
 .trash-header {
   display: flex;

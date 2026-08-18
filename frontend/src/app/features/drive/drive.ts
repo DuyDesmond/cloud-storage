@@ -31,7 +31,7 @@ import {
   UploadDialog,
   UploadDialogResult,
 } from '../upload-dialog/upload-dialog';
-import { UploadQueueService } from '../../core/file-operations/services/upload-queue-service';
+import { UploadQueueService } from '../../core/file-operations/services/upload-queue.service';
 import { UploadWidget } from '../upload-widget/upload-widget';
 import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
 import { AuthService } from '@core/auth/services/auth.service';

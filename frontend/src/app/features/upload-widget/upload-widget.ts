@@ -7,7 +7,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import {
   UploadQueueService,
   UploadQueueItem,
-} from '../../core/file-operations/services/upload-queue-service';
+} from '../../core/file-operations/services/upload-queue.service';
 
 @Component({
   selector: 'app-upload-widget',

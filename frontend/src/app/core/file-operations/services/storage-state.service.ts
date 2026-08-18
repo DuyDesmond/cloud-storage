@@ -4,7 +4,7 @@ import {
   DEFAULT_STORAGE_QUOTA_BYTES,
   FileOperationsService,
 } from './file-operations.service';
-import { UploadQueueService } from './upload-queue-service';
+import { UploadQueueService } from './upload-queue.service';
 
 @Injectable({
   providedIn: 'root',
