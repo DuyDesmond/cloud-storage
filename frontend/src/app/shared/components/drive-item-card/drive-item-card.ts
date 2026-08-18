@@ -28,7 +28,7 @@ export class DriveItemCard {
   displayMeta = computed(() => {
     const item = this.item();
     if (item.itemType === 'folder') {
-      return `${item.itemsCount ?? 0} items`;
+      return '';
     }
     return this.formatBytes(item.sizeBytes);
   });

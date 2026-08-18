@@ -59,8 +59,10 @@
 
   <div class="card-footer">
     <div class="meta-info">
-      <span>{{ item().updatedAt | date:'shortDate' }}</span>
-      <span>{{ displayMeta() }}</span>
+      <span>{{ item().updatedAt | date:'MMM d, y, h:mm a' }}</span>
+      @if (displayMeta()) {
+        <span>{{ displayMeta() }}</span>
+      }
     </div>
     <mat-icon
       class="type-icon"
