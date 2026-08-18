@@ -1,3 +1,5 @@
+argon2_cffi
+apscheduler
 pytest
 pytest-env
 email-validator

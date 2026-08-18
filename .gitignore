@@ -30,6 +30,9 @@ yarn-error.log*
 /__pycache__/
 /.pytest_cache
 .env
+venv
 *.txt
 .vscode
 *.md
+postman
+.postman
