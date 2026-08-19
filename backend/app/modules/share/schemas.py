@@ -10,6 +10,7 @@ class ShareBaseRequest(BaseModel):
 class ShareWithUserRequest(ShareBaseRequest):
     email: EmailStr
     permission: Literal['view', 'edit'] = 'view'
+    password: Optional[str] = None
 
 class UpdateUserShareRequest(ShareWithUserRequest):
     pass
@@ -29,6 +30,7 @@ class SharedUserResponse(BaseModel):
     email: str
     name: str
     permission: Literal['view', 'edit']
+    has_password: bool = False
 
 class PublicLinkStateResponse(BaseModel):
     enabled: bool
@@ -42,3 +44,8 @@ class ShareStateResponse(BaseModel):
 
 class GenericMessageResponse(BaseModel):
     message: str
+
+class VisitPublicLinkResponse(BaseModel):
+    message: str
+    is_file: bool
+    target_id: UUID

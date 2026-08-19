@@ -56,12 +56,14 @@ export class ShareDialog implements OnInit {
 
     this.shareUserForm = this.fb.group({
       email: ['', [Validators.required, Validators.email]],
-      permission: ['view']
+      permission: ['view'],
+      password: ['']
     });
 
     this.publicLinkForm = this.fb.group({
       enabled: [false],
-      permission: ['view']
+      permission: ['view'],
+      password: ['']
     });
   }
 
@@ -69,12 +71,9 @@ export class ShareDialog implements OnInit {
     this.loadShareState();
 
     this.publicLinkForm.get('enabled')?.valueChanges.subscribe(enabled => {
-      this.updatePublicLink(enabled, this.publicLinkForm.value.permission);
-    });
-
-    this.publicLinkForm.get('permission')?.valueChanges.subscribe(permission => {
-      if (this.publicLinkForm.value.enabled) {
-        this.updatePublicLink(true, permission);
+      if (!enabled) {
+        // Only auto-save when disabling
+        this.updatePublicLink();
       }
     });
   }
@@ -100,11 +99,11 @@ export class ShareDialog implements OnInit {
   addUserShare(): void {
     if (this.shareUserForm.invalid) return;
 
-    const { email, permission } = this.shareUserForm.value;
+    const { email, permission, password } = this.shareUserForm.value;
 
-    this.shareService.shareWithUser(this.item.id, this.isFile, email, permission).subscribe({
+    this.shareService.shareWithUser(this.item.id, this.isFile, email, permission, password).subscribe({
       next: () => {
-        this.shareUserForm.reset({ permission: 'view' });
+        this.shareUserForm.reset({ permission: 'view', password: '' });
         this.loadShareState();
       },
       error: (err) => {
@@ -135,8 +134,9 @@ export class ShareDialog implements OnInit {
     });
   }
 
-  updatePublicLink(enabled: boolean, permission: 'view' | 'edit'): void {
-    this.shareService.setPublicLink(this.item.id, this.isFile, enabled, permission).subscribe({
+  updatePublicLink(): void {
+    const { enabled, permission, password } = this.publicLinkForm.value;
+    this.shareService.setPublicLink(this.item.id, this.isFile, enabled, permission, password).subscribe({
       next: () => {
         this.loadShareState();
       },

@@ -22,10 +22,11 @@ class ShareRepository:
         is_file: bool, 
         grantee_id: uuid.UUID, 
         permission: str, 
-        created_by: uuid.UUID
+        created_by: uuid.UUID,
+        password_hash: Optional[str] = None
     ) -> None:
         query = queries.UPSERT_USER_SHARE_FILE if is_file else queries.UPSERT_USER_SHARE_FOLDER
-        await conn.execute(query, target_id, grantee_id, permission, created_by)
+        await conn.execute(query, target_id, grantee_id, permission, created_by, password_hash)
 
     async def revoke_user_share(
         self, 
@@ -69,3 +70,19 @@ class ShareRepository:
         query = queries.GET_SHARE_STATE_FILE if is_file else queries.GET_SHARE_STATE_FOLDER
         rows = await conn.fetch(query, target_id)
         return [dict(row) for row in rows]
+
+    async def get_acl_by_token(
+        self,
+        conn: asyncpg.Connection,
+        share_token: str
+    ) -> Optional[dict[str, Any]]:
+        row = await conn.fetchrow(queries.GET_ACL_BY_TOKEN, share_token)
+        return dict(row) if row else None
+
+    async def upsert_public_link_visitor(
+        self,
+        conn: asyncpg.Connection,
+        user_id: uuid.UUID,
+        acl_entry_id: uuid.UUID
+    ) -> None:
+        await conn.execute(queries.UPSERT_PUBLIC_LINK_VISITOR, user_id, acl_entry_id)

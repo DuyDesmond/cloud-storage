@@ -289,6 +289,10 @@ GET_EFFECTIVE_PERMISSION = """
 SELECT nephos.effective_permission($1, $2, $3, $4)
 """
 
+GET_EFFECTIVE_ACL = """
+SELECT permission, password_hash FROM nephos.effective_acl($1, $2, $3, $4)
+"""
+
 NAME_EXISTS = """
   SELECT nephos.name_exists(
       p_is_file => $1,
@@ -356,6 +360,14 @@ JOIN nephos.acl_entries acl ON acl.folder_id = f.id
 WHERE acl.grantee_id = $1
   AND acl.revoked_at IS NULL
   AND f.is_trashed = FALSE
+UNION
+SELECT f.id, f.owner_id, f.parent_folder_id, f.folder_name, f.path, f.is_trashed, f.trashed_at, f.created_at, f.updated_at
+FROM nephos.folders f
+JOIN nephos.acl_entries acl ON acl.folder_id = f.id
+JOIN nephos.public_link_visitors v ON v.acl_entry_id = acl.id
+WHERE v.user_id = $1
+  AND acl.revoked_at IS NULL
+  AND f.is_trashed = FALSE
 """
 
 GET_SHARED_WITH_ME_FILES = """
@@ -364,6 +376,15 @@ SELECT f.id, f.owner_id, f.parent_folder_id, f.storage_key, f.file_name, f.size_
 FROM nephos.files f
 JOIN nephos.acl_entries acl ON acl.file_id = f.id
 WHERE acl.grantee_id = $1
+  AND acl.revoked_at IS NULL
+  AND f.is_trashed = FALSE
+UNION
+SELECT f.id, f.owner_id, f.parent_folder_id, f.storage_key, f.file_name, f.size_bytes, f.mime_type, f.content_hash,
+       f.path, f.is_trashed, f.trashed_at, f.created_at, f.updated_at
+FROM nephos.files f
+JOIN nephos.acl_entries acl ON acl.file_id = f.id
+JOIN nephos.public_link_visitors v ON v.acl_entry_id = acl.id
+WHERE v.user_id = $1
   AND acl.revoked_at IS NULL
   AND f.is_trashed = FALSE
 """

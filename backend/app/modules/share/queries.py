@@ -1,16 +1,22 @@
 UPSERT_USER_SHARE_FILE = """
-    INSERT INTO nephos.acl_entries (file_id, principal_type, grantee_id, permission, created_by)
-    VALUES ($1, 'user', $2, $3::nephos.permission_level, $4)
+    INSERT INTO nephos.acl_entries (file_id, principal_type, grantee_id, permission, created_by, password_hash)
+    VALUES ($1, 'user', $2, $3::nephos.permission_level, $4, $5)
     ON CONFLICT (file_id, grantee_id) WHERE principal_type = 'user' AND revoked_at IS NULL
-    DO UPDATE SET permission = EXCLUDED.permission, updated_at = NOW()
+    DO UPDATE SET 
+        permission = EXCLUDED.permission, 
+        password_hash = EXCLUDED.password_hash,
+        updated_at = NOW()
     RETURNING *;
 """
 
 UPSERT_USER_SHARE_FOLDER = """
-    INSERT INTO nephos.acl_entries (folder_id, principal_type, grantee_id, permission, created_by)
-    VALUES ($1, 'user', $2, $3::nephos.permission_level, $4)
+    INSERT INTO nephos.acl_entries (folder_id, principal_type, grantee_id, permission, created_by, password_hash)
+    VALUES ($1, 'user', $2, $3::nephos.permission_level, $4, $5)
     ON CONFLICT (folder_id, grantee_id) WHERE principal_type = 'user' AND revoked_at IS NULL
-    DO UPDATE SET permission = EXCLUDED.permission, updated_at = NOW()
+    DO UPDATE SET 
+        permission = EXCLUDED.permission, 
+        password_hash = EXCLUDED.password_hash,
+        updated_at = NOW()
     RETURNING *;
 """
 
@@ -49,15 +55,25 @@ UPSERT_PUBLIC_LINK_FOLDER = """
 """
 
 REVOKE_PUBLIC_LINK_FILE = """
-    UPDATE nephos.acl_entries
-    SET revoked_at = NOW(), updated_at = NOW()
-    WHERE file_id = $1 AND principal_type = 'public_link' AND revoked_at IS NULL
+    WITH revoked AS (
+        UPDATE nephos.acl_entries
+        SET revoked_at = NOW(), updated_at = NOW()
+        WHERE file_id = $1 AND principal_type = 'public_link' AND revoked_at IS NULL
+        RETURNING id
+    )
+    DELETE FROM nephos.public_link_visitors
+    WHERE acl_entry_id IN (SELECT id FROM revoked)
 """
 
 REVOKE_PUBLIC_LINK_FOLDER = """
-    UPDATE nephos.acl_entries
-    SET revoked_at = NOW(), updated_at = NOW()
-    WHERE folder_id = $1 AND principal_type = 'public_link' AND revoked_at IS NULL
+    WITH revoked AS (
+        UPDATE nephos.acl_entries
+        SET revoked_at = NOW(), updated_at = NOW()
+        WHERE folder_id = $1 AND principal_type = 'public_link' AND revoked_at IS NULL
+        RETURNING id
+    )
+    DELETE FROM nephos.public_link_visitors
+    WHERE acl_entry_id IN (SELECT id FROM revoked)
 """
 
 GET_SHARE_STATE_FILE = """
@@ -82,4 +98,17 @@ CHECK_OWNER_FILE = """
 
 CHECK_OWNER_FOLDER = """
     SELECT 1 FROM nephos.folders WHERE id = $1 AND owner_id = $2 AND is_trashed = FALSE
+"""
+
+GET_ACL_BY_TOKEN = """
+    SELECT id, file_id, folder_id, principal_type, permission, password_hash
+    FROM nephos.acl_entries
+    WHERE share_token = $1 AND revoked_at IS NULL
+"""
+
+UPSERT_PUBLIC_LINK_VISITOR = """
+    INSERT INTO nephos.public_link_visitors (user_id, acl_entry_id, last_accessed_at)
+    VALUES ($1, $2, NOW())
+    ON CONFLICT (user_id, acl_entry_id) 
+    DO UPDATE SET last_accessed_at = NOW()
 """

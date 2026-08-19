@@ -194,9 +194,6 @@ CREATE TABLE IF NOT EXISTS nephos.acl_entries (
     CONSTRAINT check_principal_shape CHECK (
         (principal_type = 'user' AND grantee_id IS NOT NULL AND share_token IS NULL) OR
         (principal_type = 'public_link' AND share_token IS NOT NULL AND grantee_id IS NULL)
-    ),
-    CONSTRAINT check_password_only_for_link CHECK (
-        principal_type = 'public_link' OR password_hash IS NULL
     )
 );
 
@@ -208,6 +205,14 @@ CREATE INDEX IF NOT EXISTS idx_acl_folder ON nephos.acl_entries (folder_id)
   WHERE folder_id IS NOT NULL AND revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_acl_share_token ON nephos.acl_entries (share_token)
   WHERE share_token IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS nephos.public_link_visitors (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES nephos.users(id) ON DELETE CASCADE,
+    acl_entry_id UUID REFERENCES nephos.acl_entries(id) ON DELETE CASCADE,
+    last_accessed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT unique_visitor_per_link UNIQUE (user_id, acl_entry_id)
+);
 
 -- A user can only have one LIVE grant per file/folder (re-sharing updates the
 -- existing row's permission rather than inserting a second one).
@@ -1029,6 +1034,61 @@ $$ LANGUAGE plpgsql STABLE;
 -- Note: password-protected public links (acl_entries.password_hash) are verified
 -- at the app layer before this function is even called for an anonymous caller --
 -- this function only decides the permission level, not link-password gating.
+
+CREATE OR REPLACE FUNCTION nephos.effective_acl(
+    p_target_path LTREE,
+    p_is_file BOOLEAN,
+    p_target_id UUID,
+    p_user_id UUID,
+    OUT permission nephos.permission_level,
+    OUT password_hash TEXT
+) AS $$
+DECLARE
+    target_trashed BOOLEAN;
+BEGIN
+    IF p_is_file THEN
+        SELECT is_trashed INTO target_trashed FROM nephos.files WHERE id = p_target_id;
+    ELSE
+        SELECT is_trashed INTO target_trashed FROM nephos.folders WHERE id = p_target_id;
+    END IF;
+
+    IF target_trashed IS NULL OR target_trashed THEN
+        permission := NULL;
+        password_hash := NULL;
+        RETURN;
+    END IF;
+
+    WITH applicable_grants AS (
+        SELECT a.permission, a.password_hash, nlevel(f.path) as depth
+        FROM nephos.acl_entries a
+        JOIN nephos.folders f ON f.id = a.folder_id
+        WHERE a.revoked_at IS NULL
+          AND f.is_trashed = FALSE
+          AND f.path @> p_target_path
+          AND (
+                a.principal_type = 'public_link'
+             OR (a.principal_type = 'user' AND a.grantee_id = p_user_id)
+          )
+        UNION ALL
+        SELECT a.permission, a.password_hash, nlevel(p_target_path) as depth
+        FROM nephos.acl_entries a
+        JOIN nephos.files fl ON fl.id = a.file_id
+        WHERE p_is_file AND a.file_id = p_target_id
+          AND a.revoked_at IS NULL
+          AND fl.is_trashed = FALSE
+          AND (
+                a.principal_type = 'public_link'
+             OR (a.principal_type = 'user' AND a.grantee_id = p_user_id)
+          )
+    )
+    SELECT 
+        MAX(g.permission),
+        (SELECT g2.password_hash FROM applicable_grants g2 ORDER BY g2.depth ASC LIMIT 1)
+    INTO permission, password_hash
+    FROM applicable_grants g;
+
+END;
+$$ LANGUAGE plpgsql STABLE;
 
 -- ============================================================================
 -- 17. OWNER ACCESS & IMMUTABLE OWNERSHIP

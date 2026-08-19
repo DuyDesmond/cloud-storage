@@ -7,6 +7,7 @@ export interface SharedUser {
   email: string;
   name: string;
   permission: 'view' | 'edit';
+  has_password: boolean;
 }
 
 export interface PublicLinkState {
@@ -33,9 +34,9 @@ export class ShareService {
     });
   }
 
-  shareWithUser(targetId: string, isFile: boolean, email: string, permission: 'view' | 'edit'): Observable<{message: string}> {
+  shareWithUser(targetId: string, isFile: boolean, email: string, permission: 'view' | 'edit', password?: string): Observable<{message: string}> {
     return this.http.post<{message: string}>(`${this.apiUrl}/user`, {
-      target_id: targetId, is_file: isFile, email, permission
+      target_id: targetId, is_file: isFile, email, permission, password: password || null
     }, { withCredentials: true });
   }
 
@@ -50,5 +51,9 @@ export class ShareService {
     return this.http.post<{message: string}>(`${this.apiUrl}/public`, {
       target_id: targetId, is_file: isFile, enabled, permission, password: password || null
     }, { withCredentials: true });
+  }
+
+  visitPublicLink(shareToken: string): Observable<{message: string, is_file: boolean, target_id: string}> {
+    return this.http.post<{message: string, is_file: boolean, target_id: string}>(`${this.apiUrl}/visit/${shareToken}`, {}, { withCredentials: true });
   }
 }

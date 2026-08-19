@@ -42,3 +42,11 @@ async def get_share_state(
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
     return await share_service.get_share_state(conn, target_id, is_file, current_user['id'])
+
+@router.post("/visit/{share_token}", response_model=schemas.VisitPublicLinkResponse)
+async def visit_public_link(
+    share_token: str,
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection)
+):
+    return await share_service.visit_public_link(conn, share_token, current_user['id'])

@@ -400,15 +400,16 @@ class FileOperationsRepository:
     ) -> asyncpg.Record | None:
         return await conn.fetchrow(queries.GET_OWNER_AND_TRASHED_FOR_FOLDER, folder_id)
 
-    async def get_effective_permission(
+    async def get_effective_acl(
         self, 
         conn: AsyncConn, 
         path: str, 
         is_file: bool, 
         target_id: uuid.UUID, 
         user_id: uuid.UUID
-    ) -> str | None:
-        return await conn.fetchval(queries.GET_EFFECTIVE_PERMISSION, path, is_file, target_id, user_id)
+    ) -> dict | None:
+        row = await conn.fetchrow(queries.GET_EFFECTIVE_ACL, path, is_file, target_id, user_id)
+        return dict(row) if row else None
 
     async def file_exists_by_name(
         self,

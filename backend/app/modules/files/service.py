@@ -13,7 +13,7 @@ import asyncpg
 import boto3
 from botocore.exceptions import ClientError
 from boto3.s3.transfer import TransferConfig
-from fastapi import Depends, HTTPException, UploadFile, status, Request
+from fastapi import Depends, HTTPException, UploadFile, status, Request, Header
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
@@ -315,9 +315,11 @@ class FileOperationsService:
         self,
         repo: FileOperationsRepository = Depends(),
         storage: R2StorageGateway = Depends(),
+        x_share_password: str | None = Header(default=None, alias="X-Share-Password"),
     ) -> None:
         self.repo = repo
         self.storage = storage
+        self.provided_password = x_share_password
 
     async def request_presigned_upload(
         self,
@@ -657,10 +659,22 @@ class FileOperationsService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target is trashed.")
             return
 
-        permission = await self.repo.get_effective_permission(conn, path, is_file, target_id, current_user_id)
+        acl = await self.repo.get_effective_acl(conn, path, is_file, target_id, current_user_id)
+        if not acl or not acl.get("permission"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+            
+        permission = acl["permission"]
+        password_hash = acl.get("password_hash")
+        
+        # Validate password if required
+        if password_hash:
+            if not self.provided_password:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="PASSWORD_REQUIRED")
+            if hash_password(self.provided_password) != password_hash:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_PASSWORD")
 
         if permission != "edit":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Edit permission required.")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Edit access required.")
 
     async def _require_parent_access(
         self,
@@ -1336,10 +1350,18 @@ class FileOperationsService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target is trashed.")
             return
 
-        permission = await self.repo.get_effective_permission(conn, path, is_file, target_id, current_user_id)
-
-        if permission is None:
+        acl = await self.repo.get_effective_acl(conn, path, is_file, target_id, current_user_id)
+        if not acl or not acl.get("permission"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="View permission required.")
+
+        permission = acl["permission"]
+        password_hash = acl.get("password_hash")
+        
+        if password_hash:
+            if not self.provided_password:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="PASSWORD_REQUIRED")
+            if hash_password(self.provided_password) != password_hash:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_PASSWORD")
 
     async def download_file_stream(
         self,
