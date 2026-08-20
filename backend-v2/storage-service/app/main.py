@@ -36,7 +36,10 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 
+from app.core.rate_limit import setup_rate_limiting
+
 app = FastAPI(title=settings.PROJECT_NAME + " - Storage Service", lifespan=lifespan)
+setup_rate_limiting(app)
 
 # Register routes
 app.include_router(file_operations_router, prefix=settings.API_STR)
