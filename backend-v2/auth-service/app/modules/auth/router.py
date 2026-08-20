@@ -11,6 +11,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def register(
+    request: Request,
     payload: schemas.UserRegisterRequest,
     response: Response,
     conn: asyncpg.Connection = Depends(get_db_connection),
@@ -47,6 +48,7 @@ async def refresh(
 @router.post("/logout")
 @limiter.limit("10/minute")
 async def logout(
+    request: Request,
     response: Response,
     current_user: dict = Depends(get_current_user),
     auth_service: AuthService = Depends(AuthService),
@@ -56,13 +58,14 @@ async def logout(
 
 @router.get("/me", response_model=schemas.UserResponse)
 @limiter.limit("10/minute")
-async def get_me(current_user: dict = Depends(get_current_user)):
+async def get_me(request: Request, current_user: dict = Depends(get_current_user)):
     """Protected endpoint: Returns current user profile."""
     return schemas.UserResponse(**current_user)
 
 @router.delete("/me", status_code=status.HTTP_200_OK)
 @limiter.limit("10/minute")
 async def delete_me(
+    request: Request,
     response: Response,
     current_user: dict = Depends(get_current_user),
     conn: asyncpg.Connection = Depends(get_db_connection),
@@ -74,6 +77,7 @@ async def delete_me(
 @router.post("/forgot-password", response_model=schemas.MessageResponse)
 @limiter.limit("10/minute")
 async def forgot_password(
+    request: Request,
     payload: schemas.ForgotPasswordRequest,
     conn: asyncpg.Connection = Depends(get_db_connection),
     auth_service: AuthService = Depends(AuthService),
@@ -85,6 +89,7 @@ async def forgot_password(
 @router.post("/reset-password", response_model=schemas.MessageResponse)
 @limiter.limit("10/minute")
 async def reset_password(
+    request: Request,
     payload: schemas.ResetPasswordRequest,
     conn: asyncpg.Connection = Depends(get_db_connection),
     auth_service: AuthService = Depends(AuthService),
@@ -95,6 +100,7 @@ async def reset_password(
 @router.put("/change-password", response_model=schemas.MessageResponse)
 @limiter.limit("10/minute")
 async def change_password(
+    request: Request,
     payload: schemas.ChangePasswordRequest,
     current_user: dict = Depends(get_current_user),
     conn: asyncpg.Connection = Depends(get_db_connection),
