@@ -217,7 +217,9 @@ export class UploadQueueService {
       }
     } catch (err: any) {
       const errorMsg =
-        err?.error?.detail || err?.message || 'Upload failed due to network error.';
+        err?.error?.detail ||
+        err?.message ||
+        'Upload failed due to network error.';
       this.updateItemState(id, {
         status: 'error',
         errorMessage: errorMsg,

@@ -1,6 +1,4 @@
-import {
-  FileOperationsService,
-} from '../../core/file-operations/services/file-operations.service';
+import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
 import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -143,12 +141,6 @@ export class UserProfile implements OnInit {
   onProfileHeaderClick(): void {
     this.isProfileActive.set(true);
     this.activeSideNav.set(''); // Clear active highlight on side panel links
-  }
-
-  // Triggered when user navigates using the side panel or mobile bottom nav
-  switchNav(navItem: SidePanelNavKey): void {
-    this.activeSideNav.set(navItem);
-    this.isProfileActive.set(false);
   }
 
   onUploadTrigger(): void {

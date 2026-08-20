@@ -1,4 +1,11 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  signal,
+  computed,
+  inject,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -11,7 +18,10 @@ import { FileOperationsService } from '../../core/file-operations/services/file-
 import { StorageStateService } from '../../core/file-operations/services/storage-state.service';
 import { DriveItem } from '../../shared/components/drive-item-card/drive-item.model';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
-import { SidePanel, SidePanelNavKey } from '../../shared/components/side-panel/side-panel';
+import {
+  SidePanel,
+  SidePanelNavKey,
+} from '../../shared/components/side-panel/side-panel';
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
 import { UploadWidget } from '../upload-widget/upload-widget';
 import { DriveItemCard } from '../../shared/components/drive-item-card/drive-item-card';
@@ -43,7 +53,6 @@ export class Trash implements OnInit, OnDestroy {
 
   // State signals
   isLoading = signal<boolean>(false);
-  isSidebarCollapsed = signal<boolean>(false);
   currentNav = signal<SidePanelNavKey>('trash');
 
   items = signal<DriveItem[]>([]);
@@ -105,7 +114,11 @@ export class Trash implements OnInit, OnDestroy {
   }
 
   onPermanentDeleteItem(item: DriveItem): void {
-    if (!confirm(`Permanently delete "${item.name}"? This action cannot be undone.`)) {
+    if (
+      !confirm(
+        `Permanently delete "${item.name}"? This action cannot be undone.`,
+      )
+    ) {
       return;
     }
 
@@ -125,7 +138,9 @@ export class Trash implements OnInit, OnDestroy {
         },
         error: (err: any) => {
           const errorMsg =
-            err?.error?.detail || err?.message || 'Failed to delete item permanently.';
+            err?.error?.detail ||
+            err?.message ||
+            'Failed to delete item permanently.';
           this.snackBar.open(errorMsg, 'Close', {
             duration: 3000,
           });
@@ -164,14 +179,6 @@ export class Trash implements OnInit, OnDestroy {
         },
       }),
     );
-  }
-
-  switchNav(nav: SidePanelNavKey): void {
-    this.currentNav.set(nav);
-  }
-
-  onSidebarCollapseChange(collapsed: boolean): void {
-    this.isSidebarCollapsed.set(collapsed);
   }
 
   onUploadTrigger(): void {

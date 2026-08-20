@@ -1,4 +1,11 @@
-import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
+﻿import {
+  Component,
+  inject,
+  signal,
+  computed,
+  OnInit,
+  OnDestroy,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -8,11 +15,17 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Subscription, Subject, switchMap, of, catchError } from 'rxjs';
 
-import { FileOperationsService, BreadcrumbItem } from '../../core/file-operations/services/file-operations.service';
+import {
+  FileOperationsService,
+  BreadcrumbItem,
+} from '../../core/file-operations/services/file-operations.service';
 import { StorageStateService } from '../../core/file-operations/services/storage-state.service';
 import { AuthService } from '@core/auth/services/auth.service';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
-import { SidePanel, SidePanelNavKey } from '../../shared/components/side-panel/side-panel';
+import {
+  SidePanel,
+  SidePanelNavKey,
+} from '../../shared/components/side-panel/side-panel';
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
 import { DriveItemCard } from '../../shared/components/drive-item-card/drive-item-card';
 import { DriveItem } from '../../shared/components/drive-item-card/drive-item.model';
@@ -22,19 +35,26 @@ import { Breadcrumb } from '../../shared/components/breadcrumb/breadcrumb';
   selector: 'app-shared-with-me',
   standalone: true,
   imports: [
-    CommonModule, RouterModule, MatIconModule, MatButtonModule,
-    MatProgressBarModule, MatSnackBarModule, DashboardHeader,
-    SidePanel, MobileBottomNav, DriveItemCard, Breadcrumb
+    CommonModule,
+    RouterModule,
+    MatIconModule,
+    MatButtonModule,
+    MatProgressBarModule,
+    MatSnackBarModule,
+    DashboardHeader,
+    SidePanel,
+    MobileBottomNav,
+    DriveItemCard,
+    Breadcrumb,
   ],
   templateUrl: './shared-with-me.html',
-  styleUrls: ['../drive/drive.scss'] // Reusing drive layout styles
+  styleUrls: ['../drive/drive.scss'], // Reusing drive layout styles
 })
 export class SharedWithMe implements OnInit, OnDestroy {
   readonly storageState = inject(StorageStateService);
 
   currentNav = signal<SidePanelNavKey>('shared');
   isLoading = signal<boolean>(false);
-  isSidebarCollapsed = signal<boolean>(false);
 
   currentFolderId = signal<string | null>(null);
   breadcrumbs = signal<BreadcrumbItem[]>([]);
@@ -56,62 +76,67 @@ export class SharedWithMe implements OnInit, OnDestroy {
     this.storageState.refreshStorageUsage();
 
     this.subscriptions.add(
-      this.routeChange$.pipe(
-        switchMap((folderId) => {
-          this.isLoading.set(true);
-          this.items.set([]);
+      this.routeChange$
+        .pipe(
+          switchMap((folderId) => {
+            this.isLoading.set(true);
+            this.items.set([]);
 
-          const fetchReq = folderId === null
-            ? this.fileService.getSharedWithMe()
-            : this.fileService.getStorageContents(folderId);
+            const fetchReq =
+              folderId === null
+                ? this.fileService.getSharedWithMe()
+                : this.fileService.getStorageContents(folderId);
 
-          return fetchReq.pipe(
-            catchError((err) => {
-              this.handleFetchError(err);
-              return of({ folders: [], files: [] });
-            })
+            return fetchReq.pipe(
+              catchError((err) => {
+                this.handleFetchError(err);
+                return of({ folders: [], files: [] });
+              }),
+            );
+          }),
+        )
+        .subscribe((data: any) => {
+          const folderItems: DriveItem[] = (data.folders ?? []).map(
+            (f: any) => ({
+              id: f.id,
+              ownerId: f.owner_id,
+              parentFolderId: f.parent_folder_id,
+              path: f.path,
+              name: f.folder_name,
+              itemType: 'folder',
+              isTrashed: f.is_trashed,
+              trashedAt: f.trashed_at,
+              createdAt: f.created_at,
+              updatedAt: f.updated_at,
+            }),
           );
-        })
-      ).subscribe((data: any) => {
-        const folderItems: DriveItem[] = (data.folders ?? []).map((f: any) => ({
-          id: f.id,
-          ownerId: f.owner_id,
-          parentFolderId: f.parent_folder_id,
-          path: f.path,
-          name: f.folder_name,
-          itemType: 'folder',
-          isTrashed: f.is_trashed,
-          trashedAt: f.trashed_at,
-          createdAt: f.created_at,
-          updatedAt: f.updated_at,
-        }));
 
-        const fileItems: DriveItem[] = (data.files ?? []).map((f: any) => ({
-          id: f.id,
-          ownerId: f.owner_id,
-          parentFolderId: f.parent_folder_id,
-          path: f.path,
-          name: f.file_name,
-          itemType: 'file',
-          storageKey: f.storage_key,
-          sizeBytes: f.size_bytes,
-          mimeType: f.mime_type,
-          contentHash: f.content_hash,
-          isTrashed: f.is_trashed,
-          trashedAt: f.trashed_at,
-          createdAt: f.created_at,
-          updatedAt: f.updated_at,
-        }));
+          const fileItems: DriveItem[] = (data.files ?? []).map((f: any) => ({
+            id: f.id,
+            ownerId: f.owner_id,
+            parentFolderId: f.parent_folder_id,
+            path: f.path,
+            name: f.file_name,
+            itemType: 'file',
+            storageKey: f.storage_key,
+            sizeBytes: f.size_bytes,
+            mimeType: f.mime_type,
+            contentHash: f.content_hash,
+            isTrashed: f.is_trashed,
+            trashedAt: f.trashed_at,
+            createdAt: f.created_at,
+            updatedAt: f.updated_at,
+          }));
 
-        this.items.set([...folderItems, ...fileItems]);
-        this.isLoading.set(false);
-      })
+          this.items.set([...folderItems, ...fileItems]);
+          this.isLoading.set(false);
+        }),
     );
 
     this.subscriptions.add(
       this.router.events.subscribe(() => {
         this.resolveContextFromUrl(this.router.url);
-      })
+      }),
     );
 
     this.resolveContextFromUrl(this.router.url);
@@ -155,22 +180,16 @@ export class SharedWithMe implements OnInit, OnDestroy {
           document.title = `Nephos - ${last.name}`;
         }
       },
-      error: () => this.breadcrumbs.set([])
+      error: () => this.breadcrumbs.set([]),
     });
   }
 
   private handleFetchError(err: any): void {
     this.isLoading.set(false);
-    this.snackBar.open('Unable to access this shared item.', 'Dismiss', { duration: 4000 });
+    this.snackBar.open('Unable to access this shared item.', 'Dismiss', {
+      duration: 4000,
+    });
     this.router.navigateByUrl('/drive/shared-with-me');
-  }
-
-  switchNav(nav: SidePanelNavKey) {
-    if (nav !== 'shared') this.router.navigateByUrl(`/drive/root`);
-  }
-
-  onSidebarCollapseChange(collapsed: boolean): void {
-    this.isSidebarCollapsed.set(collapsed);
   }
 
   onOpenItem(item: DriveItem): void {
@@ -189,7 +208,7 @@ export class SharedWithMe implements OnInit, OnDestroy {
         anchor.download = item.name;
         anchor.click();
         URL.revokeObjectURL(url);
-      }
+      },
     });
   }
 

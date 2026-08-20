@@ -33,6 +33,6 @@ yarn-error.log*
 venv
 *.txt
 .vscode
-*.md
 postman
 .postman
+*.md

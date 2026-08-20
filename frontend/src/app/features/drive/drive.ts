@@ -18,7 +18,14 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { Subscription, Subject, switchMap, of, catchError, firstValueFrom } from 'rxjs';
+import {
+  Subscription,
+  Subject,
+  switchMap,
+  of,
+  catchError,
+  firstValueFrom,
+} from 'rxjs';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import {
   SidePanel,
@@ -99,8 +106,6 @@ export class Drive implements OnInit, OnDestroy {
 
   currentNav = signal<SidePanelNavKey>('home');
   isLoading = signal<boolean>(false);
-  isSidebarCollapsed = signal<boolean>(false);
-
   // Current navigation state
   currentSection = signal<DriveSection>('root');
   currentFolderId = signal<string | null>(null);
@@ -131,53 +136,57 @@ export class Drive implements OnInit, OnDestroy {
 
     // switchMap ensures previous fetch is cancelled when route changes (AbortController equivalent)
     this.subscriptions.add(
-      this.routeChange$.pipe(
-        switchMap((ctx) => {
-          this.isLoading.set(true);
-          this.items.set([]);
-          this.canWrite.set(true);
+      this.routeChange$
+        .pipe(
+          switchMap((ctx) => {
+            this.isLoading.set(true);
+            this.items.set([]);
+            this.canWrite.set(true);
 
-          return this.fileService.getStorageContents(ctx.folderId).pipe(
-            catchError((err) => {
-              this.handleFetchError(err);
-              return of({ folders: [], files: [] });
-            })
+            return this.fileService.getStorageContents(ctx.folderId).pipe(
+              catchError((err) => {
+                this.handleFetchError(err);
+                return of({ folders: [], files: [] });
+              }),
+            );
+          }),
+        )
+        .subscribe((data: any) => {
+          const folderItems: DriveItem[] = (data.folders ?? []).map(
+            (f: any) => ({
+              id: f.id,
+              ownerId: f.owner_id,
+              parentFolderId: f.parent_folder_id,
+              path: f.path,
+              name: f.folder_name,
+              itemType: 'folder',
+              isTrashed: f.is_trashed,
+              trashedAt: f.trashed_at,
+              createdAt: f.created_at,
+              updatedAt: f.updated_at,
+            }),
           );
-        })
-      ).subscribe((data: any) => {
-        const folderItems: DriveItem[] = (data.folders ?? []).map((f: any) => ({
-          id: f.id,
-          ownerId: f.owner_id,
-          parentFolderId: f.parent_folder_id,
-          path: f.path,
-          name: f.folder_name,
-          itemType: 'folder',
-          isTrashed: f.is_trashed,
-          trashedAt: f.trashed_at,
-          createdAt: f.created_at,
-          updatedAt: f.updated_at,
-        }));
 
-        const fileItems: DriveItem[] = (data.files ?? []).map((f: any) => ({
-          id: f.id,
-          ownerId: f.owner_id,
-          parentFolderId: f.parent_folder_id,
-          path: f.path,
-          name: f.file_name,
-          itemType: 'file',
-          storageKey: f.storage_key,
-          sizeBytes: f.size_bytes,
-          mimeType: f.mime_type,
-          contentHash: f.content_hash,
-          isTrashed: f.is_trashed,
-          trashedAt: f.trashed_at,
-          createdAt: f.created_at,
-          updatedAt: f.updated_at,
-        }));
+          const fileItems: DriveItem[] = (data.files ?? []).map((f: any) => ({
+            id: f.id,
+            ownerId: f.owner_id,
+            parentFolderId: f.parent_folder_id,
+            path: f.path,
+            name: f.file_name,
+            itemType: 'file',
+            storageKey: f.storage_key,
+            sizeBytes: f.size_bytes,
+            mimeType: f.mime_type,
+            contentHash: f.content_hash,
+            isTrashed: f.is_trashed,
+            trashedAt: f.trashed_at,
+            createdAt: f.created_at,
+            updatedAt: f.updated_at,
+          }));
 
-        this.items.set([...folderItems, ...fileItems]);
-        this.isLoading.set(false);
-      })
+          this.items.set([...folderItems, ...fileItems]);
+          this.isLoading.set(false);
+        }),
     );
 
     // Listen to the full URL to determine context (works across all route patterns)
@@ -185,7 +194,7 @@ export class Drive implements OnInit, OnDestroy {
       this.router.events.subscribe(() => {
         const url = this.router.url;
         this.resolveContextFromUrl(url);
-      })
+      }),
     );
 
     // Trigger initial load
@@ -194,7 +203,7 @@ export class Drive implements OnInit, OnDestroy {
     this.subscriptions.add(
       this.uploadQueueService.onFileUploaded.subscribe((newFileItem) => {
         this.items.update((current) => [newFileItem, ...current]);
-      })
+      }),
     );
   }
 
@@ -217,7 +226,20 @@ export class Drive implements OnInit, OnDestroy {
     this.initialized = true;
 
     this.currentFolderId.set(folderId);
-    this.currentNav.set('home');
+
+    if (path.includes('shared-with-me')) {
+      this.currentNav.set('shared');
+    } else if (path.includes('trash')) {
+      this.currentNav.set('trash');
+    } else if (path.includes('starred')) {
+      // this.currentNav.set('starred');
+      // Placeholder until Favorites page is implemented
+      this.currentNav.set('home');
+    } else if (path.includes('recent')) {
+      this.currentNav.set('recent');
+    } else {
+      this.currentNav.set('home'); // Default fallback
+    }
 
     if (folderId) {
       this.fetchBreadcrumbs(folderId, false);
@@ -243,27 +265,27 @@ export class Drive implements OnInit, OnDestroy {
       },
       error: () => {
         this.breadcrumbs.set([]);
-      }
+      },
     });
   }
 
   private handleFetchError(err: any): void {
     this.isLoading.set(false);
     if (err?.status === 403) {
-      this.snackBar.open('Unauthorized: you do not have permission to access this item.', 'Dismiss', { duration: 4000 });
+      this.snackBar.open(
+        'Unauthorized: you do not have permission to access this item.',
+        'Dismiss',
+        { duration: 4000 },
+      );
       this.router.navigateByUrl('/drive/root');
     } else if (err?.status === 404 || err?.status === 410) {
-      this.snackBar.open('Unavailable: this item no longer exists or has been trashed.', 'Dismiss', { duration: 4000 });
+      this.snackBar.open(
+        'Unavailable: this item no longer exists or has been trashed.',
+        'Dismiss',
+        { duration: 4000 },
+      );
       this.router.navigateByUrl('/drive/root');
     }
-  }
-
-  onSidebarCollapseChange(collapsed: boolean): void {
-    this.isSidebarCollapsed.set(collapsed);
-  }
-
-  switchNav(nav: SidePanelNavKey) {
-    this.currentNav.set(nav);
   }
 
   onUploadTrigger(): void {

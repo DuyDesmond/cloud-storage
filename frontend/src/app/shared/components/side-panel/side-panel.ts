@@ -51,9 +51,13 @@ export class SidePanel {
 
   navItems: SidePanelNavItem[] = [
     { key: 'home', icon: 'home', label: 'Home', route: '/drive/root' },
-    { key: 'shared', icon: 'group', label: 'Shared with me', route: '/drive/shared-with-me' },
-    { key: 'recent', icon: 'schedule', label: 'Recent', route: '/drive/root' },
-    { key: 'starred', icon: 'star', label: 'Starred', route: '/drive/root' },
+    {
+      key: 'shared',
+      icon: 'group',
+      label: 'Shared with me',
+      route: '/drive/shared-with-me',
+    },
+    { key: 'starred', icon: 'star', label: 'Favorites', route: '/drive/root' },
     { key: 'trash', icon: 'delete', label: 'Trash', route: '/trash' },
   ];
 

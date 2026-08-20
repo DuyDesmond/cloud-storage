@@ -4,12 +4,10 @@
   <div class="workspace-container">
     <app-side-panel
       [activeNav]="currentNav()"
-      (navChange)="switchNav($any($event))"
       (upload)="onUploadTrigger()"
-      (collapsedChange)="onSidebarCollapseChange($event)"
     ></app-side-panel>
 
-    <main class="main-canvas" [class.sidebar-collapsed]="isSidebarCollapsed()">
+    <main class="main-canvas">
       <section class="content-section">
         <header class="section-header trash-header">
           <div>
@@ -58,8 +56,7 @@
   </div>
 
   <app-mobile-bottom-nav
-    [currentNav]="currentNav()"
-    (navChange)="switchNav($any($event))"
+    [activeNav]="currentNav()"
     (upload)="onUploadTrigger()"
   ></app-mobile-bottom-nav>
 

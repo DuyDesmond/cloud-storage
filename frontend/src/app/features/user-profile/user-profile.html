@@ -5,10 +5,7 @@
   <!-- 2. WORKSPACE CONTAINER -->
   <div class="workspace-container">
     <!-- Side Panel handles storage & main file views -->
-    <app-side-panel
-      [activeNav]="activeSideNav()"
-      (navChange)="switchNav($event)"
-    ></app-side-panel>
+    <app-side-panel [activeNav]="activeSideNav()"></app-side-panel>
 
     <!-- MAIN CANVAS -->
     <main class="main-canvas">
@@ -49,10 +46,14 @@
             <div class="storage-details">
               <div class="storage-numbers">
                 <p class="huge-text">
-                  {{ storageState.usedStorageGB().toFixed(2) }}<span class="unit">GB</span>
+                  {{ storageState.usedStorageGB().toFixed(2) }}<span
+                    class="unit"
+                    >GB</span
+                  >
                 </p>
                 <p class="sub-text">
-                  Used of {{ storageState.totalStorageGB().toFixed(2) }} GB total
+                  Used of {{ storageState.totalStorageGB().toFixed(2) }} GB
+                  total
                 </p>
               </div>
 
