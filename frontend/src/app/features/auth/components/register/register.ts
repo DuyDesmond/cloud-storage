@@ -1,9 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, computed, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   AbstractControl,
   FormBuilder,
-  FormGroup,
   ReactiveFormsModule,
   ValidationErrors,
   ValidatorFn,
@@ -12,6 +11,7 @@ import {
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '@core/auth/services/auth.service';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
@@ -38,7 +38,6 @@ export const passwordMatchValidator: ValidatorFn = (
 
 @Component({
   selector: 'app-register',
-  standalone: true,
   imports: [
     CommonModule,
     ReactiveFormsModule,
@@ -58,8 +57,9 @@ export class Register {
   private fb = inject(FormBuilder);
   private authService = inject(AuthService);
   private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
 
-  registerForm: FormGroup = this.fb.group(
+  registerForm = this.fb.group(
     {
       username: ['', [Validators.required, Validators.minLength(3)]],
       email: ['', [Validators.required, Validators.email]],
@@ -70,9 +70,14 @@ export class Register {
     { validators: passwordMatchValidator },
   );
 
-  get isFormReady(): boolean {
-    const { username, email, password, confirmPassword, terms } =
-      this.registerForm.value;
+  private formValues = toSignal(this.registerForm.valueChanges);
+  private formStatus = toSignal(this.registerForm.statusChanges);
+
+  isFormReady = computed(() => {
+    const values = this.formValues() || this.registerForm.value;
+    const status = this.formStatus() || this.registerForm.status;
+
+    const { username, email, password, confirmPassword, terms } = values;
 
     const allFieldsFilled =
       Boolean(username?.trim()) &&
@@ -80,7 +85,11 @@ export class Register {
       Boolean(password) &&
       Boolean(confirmPassword);
 
-    const passwordsMatch = password === confirmPassword && password.length >= 6;
+    const passwordsMatch =
+      !!password &&
+      !!confirmPassword &&
+      password === confirmPassword &&
+      password.length >= 6;
 
     const termsAccepted = Boolean(terms);
 
@@ -88,9 +97,9 @@ export class Register {
       allFieldsFilled &&
       passwordsMatch &&
       termsAccepted &&
-      this.registerForm.valid
+      status === 'VALID'
     );
-  }
+  });
 
   showPassword = false;
   showConfirmPassword = false;
@@ -114,21 +123,25 @@ export class Register {
     this.isLoading.set(true);
     this.errorMessage.set(null);
 
-    const { username, email, password } = this.registerForm.value;
+    const { username, email, password } = this.registerForm.getRawValue();
 
-    this.authService.register(username, email, password).subscribe({
-      next: (user) => {
-        this.isLoading.set(false);
-        if (user && user.email) {
-          this.router.navigate(['/login']);
-        }
-      },
-      error: () => {
-        this.isLoading.set(false);
-        this.errorMessage.set(
-          'Registration failed. Please check your credentials or network connections.',
-        );
-      },
-    });
+    if (!username || !email || !password) return;
+
+    this.authService.register(username, email, password)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (user) => {
+          this.isLoading.set(false);
+          if (user && user.email) {
+            this.router.navigate(['/login']);
+          }
+        },
+        error: () => {
+          this.isLoading.set(false);
+          this.errorMessage.set(
+            'Registration failed. Please check your credentials or network connections.',
+          );
+        },
+      });
   }
 }

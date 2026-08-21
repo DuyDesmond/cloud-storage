@@ -10,7 +10,9 @@ import {
   computed,
   OnInit,
   OnDestroy,
+  DestroyRef
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -19,7 +21,6 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import {
-  Subscription,
   Subject,
   switchMap,
   of,
@@ -43,7 +44,7 @@ import { UploadWidget } from '../upload-widget/upload-widget';
 import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
 import { AuthService } from '@core/auth/services/auth.service';
 import { ShareDialog } from '../share-dialog/share-dialog';
-
+import { FilePreview } from '../file-preview/file-preview';
 import { Breadcrumb } from '../../shared/components/breadcrumb/breadcrumb';
 
 export interface Folder {
@@ -83,7 +84,6 @@ type DriveSection = 'root' | 'shared-with-me';
 
 @Component({
   selector: 'app-drive',
-  standalone: true,
   imports: [
     CommonModule,
     RouterModule,
@@ -115,6 +115,7 @@ export class Drive implements OnInit, OnDestroy {
   // Whether the user can upload/create in the current view
   canWrite = signal<boolean>(true);
 
+  private destroyRef = inject(DestroyRef);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
   private router = inject(Router);
@@ -123,7 +124,6 @@ export class Drive implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   public uploadQueueService = inject(UploadQueueService);
 
-  private subscriptions = new Subscription();
   /** Emits a new context each time the route changes; switchMap cancels previous in-flight request. */
   private routeChange$ = new Subject<{ folderId: string | null }>();
   /** Prevents double-fetch guard from blocking the very first load. */
@@ -135,80 +135,78 @@ export class Drive implements OnInit, OnDestroy {
     this.storageState.refreshStorageUsage();
 
     // switchMap ensures previous fetch is cancelled when route changes (AbortController equivalent)
-    this.subscriptions.add(
-      this.routeChange$
-        .pipe(
-          switchMap((ctx) => {
-            this.isLoading.set(true);
-            this.items.set([]);
-            this.canWrite.set(true);
+    this.routeChange$
+      .pipe(
+        switchMap((ctx) => {
+          this.isLoading.set(true);
+          this.items.set([]);
+          this.canWrite.set(true);
 
-            return this.fileService.getStorageContents(ctx.folderId).pipe(
-              catchError((err) => {
-                this.handleFetchError(err);
-                return of({ folders: [], files: [] });
-              }),
-            );
-          }),
-        )
-        .subscribe((data: any) => {
-          const folderItems: DriveItem[] = (data.folders ?? []).map(
-            (f: any) => ({
-              id: f.id,
-              ownerId: f.owner_id,
-              parentFolderId: f.parent_folder_id,
-              path: f.path,
-              name: f.folder_name,
-              itemType: 'folder',
-              isTrashed: f.is_trashed,
-              trashedAt: f.trashed_at,
-              createdAt: f.created_at,
-              updatedAt: f.updated_at,
+          return this.fileService.getStorageContents(ctx.folderId).pipe(
+            catchError((err) => {
+              this.handleFetchError(err);
+              return of({ folders: [], files: [] });
             }),
           );
-
-          const fileItems: DriveItem[] = (data.files ?? []).map((f: any) => ({
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((data: StorageContentResponse) => {
+        const folderItems: DriveItem[] = (data.folders ?? []).map(
+          (f: Folder) => ({
             id: f.id,
             ownerId: f.owner_id,
             parentFolderId: f.parent_folder_id,
             path: f.path,
-            name: f.file_name,
-            itemType: 'file',
-            storageKey: f.storage_key,
-            sizeBytes: f.size_bytes,
-            mimeType: f.mime_type,
-            contentHash: f.content_hash,
+            name: f.folder_name,
+            itemType: 'folder',
             isTrashed: f.is_trashed,
             trashedAt: f.trashed_at,
             createdAt: f.created_at,
             updatedAt: f.updated_at,
-          }));
+          }),
+        );
 
-          this.items.set([...folderItems, ...fileItems]);
-          this.isLoading.set(false);
-        }),
-    );
+        const fileItems: DriveItem[] = (data.files ?? []).map((f: FileItem) => ({
+          id: f.id,
+          ownerId: f.owner_id,
+          parentFolderId: f.parent_folder_id,
+          path: f.path,
+          name: f.file_name,
+          itemType: 'file',
+          storageKey: f.storage_key,
+          sizeBytes: f.size_bytes,
+          mimeType: f.mime_type,
+          contentHash: f.content_hash,
+          isTrashed: f.is_trashed,
+          trashedAt: f.trashed_at,
+          createdAt: f.created_at,
+          updatedAt: f.updated_at,
+        }));
+
+        this.items.set([...folderItems, ...fileItems]);
+        this.isLoading.set(false);
+      });
 
     // Listen to the full URL to determine context (works across all route patterns)
-    this.subscriptions.add(
-      this.router.events.subscribe(() => {
+    this.router.events
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
         const url = this.router.url;
         this.resolveContextFromUrl(url);
-      }),
-    );
+      });
 
     // Trigger initial load
     this.resolveContextFromUrl(this.router.url);
 
-    this.subscriptions.add(
-      this.uploadQueueService.onFileUploaded.subscribe((newFileItem) => {
+    this.uploadQueueService.onFileUploaded
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((newFileItem) => {
         this.items.update((current) => [newFileItem, ...current]);
-      }),
-    );
+      });
   }
 
   ngOnDestroy(): void {
-    this.subscriptions.unsubscribe();
     this.routeChange$.complete();
   }
 
@@ -254,31 +252,34 @@ export class Drive implements OnInit, OnDestroy {
   }
 
   private fetchBreadcrumbs(folderId: string, isFile: boolean): void {
-    this.fileService.getBreadcrumbs(folderId, isFile).subscribe({
-      next: (res) => {
-        this.breadcrumbs.set(res.breadcrumbs);
-        const last = res.breadcrumbs[res.breadcrumbs.length - 1];
-        if (last) {
-          this.pageTitle.set(last.name);
-          document.title = `Nephos - ${last.name}`;
-        }
-      },
-      error: () => {
-        this.breadcrumbs.set([]);
-      },
-    });
+    this.fileService.getBreadcrumbs(folderId, isFile)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (res) => {
+          this.breadcrumbs.set(res.breadcrumbs);
+          const last = res.breadcrumbs[res.breadcrumbs.length - 1];
+          if (last) {
+            this.pageTitle.set(last.name);
+            document.title = `Nephos - ${last.name}`;
+          }
+        },
+        error: () => {
+          this.breadcrumbs.set([]);
+        },
+      });
   }
 
-  private handleFetchError(err: any): void {
+  private handleFetchError(err: unknown): void {
     this.isLoading.set(false);
-    if (err?.status === 403) {
+    const errorStatus = (err as { status?: number })?.status;
+    if (errorStatus === 403) {
       this.snackBar.open(
         'Unauthorized: you do not have permission to access this item.',
         'Dismiss',
         { duration: 4000 },
       );
       this.router.navigateByUrl('/drive/root');
-    } else if (err?.status === 404 || err?.status === 410) {
+    } else if (errorStatus === 404 || errorStatus === 410) {
       this.snackBar.open(
         'Unavailable: this item no longer exists or has been trashed.',
         'Dismiss',
@@ -298,6 +299,7 @@ export class Drive implements OnInit, OnDestroy {
 
     dialogRef
       .afterClosed()
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((result: UploadDialogResult | undefined) => {
         if (!result) return;
 
@@ -346,40 +348,53 @@ export class Drive implements OnInit, OnDestroy {
   }
 
   private createFolder(folderName: string, parentFolderId?: string): void {
-    this.fileService.createFolder(folderName, parentFolderId).subscribe({
-      next: (folder) => {
-        this.items.update((current) => [folder, ...current]);
-      },
-      error: (error) => {
-        console.error('Create folder failed:', error);
-      },
-    });
+    this.fileService.createFolder(folderName, parentFolderId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (folder) => {
+          this.items.update((current) => [folder, ...current]);
+        },
+        error: (error) => {
+          console.error('Create folder failed:', error);
+        },
+      }
+    );
   }
 
   onOpenItem(item: DriveItem): void {
     if (item.itemType === 'folder') {
       const section = this.currentSection();
       this.router.navigateByUrl(`/drive/${section}/folder/${item.id}`);
+    } else {
+      this.dialog.open(FilePreview, {
+        width: '80vw',
+        height: '80vh',
+        maxWidth: '1200px',
+        panelClass: 'preview-dialog-panel',
+        data: { item },
+      });
     }
-    // File preview: future implementation
   }
 
   onDownloadItem(item: DriveItem): void {
     if (item.itemType !== 'file') return;
 
-    this.fileService.downloadFile(item.id).subscribe({
-      next: (blob) => {
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = item.name;
-        anchor.click();
-        URL.revokeObjectURL(url);
-      },
-      error: (error) => {
-        console.error('Download failed:', error);
-      },
-    });
+    this.fileService.downloadFile(item.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (blob) => {
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = item.name;
+          anchor.click();
+          URL.revokeObjectURL(url);
+        },
+        error: (error) => {
+          console.error('Download failed:', error);
+        },
+      }
+    );
   }
 
   onShareItem(item: DriveItem): void {
@@ -391,29 +406,34 @@ export class Drive implements OnInit, OnDestroy {
 
   onTrashItem(item: DriveItem): void {
     if (item.itemType === 'file') {
-      this.fileService.trashFile(item.id).subscribe({
-        next: () => {
-          this.items.update((current) =>
-            current.filter((entry) => entry.id !== item.id),
-          );
-          this.storageState.refreshStorageUsage();
-        },
-        error: (error) => {
-          console.error('Trash file failed:', error);
-        },
-      });
+      this.fileService.trashFile(item.id)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.items.update((current) =>
+              current.filter((entry) => entry.id !== item.id),
+            );
+            this.storageState.refreshStorageUsage();
+          },
+          error: (error) => {
+            console.error('Trash file failed:', error);
+          },
+        });
     } else {
-      this.fileService.trashFolder(item.id).subscribe({
-        next: () => {
-          this.items.update((current) =>
-            current.filter((entry) => entry.id !== item.id),
-          );
-          this.storageState.refreshStorageUsage();
-        },
-        error: (error) => {
-          console.error('Trash folder failed:', error);
-        },
-      });
+      this.fileService.trashFolder(item.id)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.items.update((current) =>
+              current.filter((entry) => entry.id !== item.id),
+            );
+            this.storageState.refreshStorageUsage();
+          },
+          error: (error) => {
+            console.error('Trash folder failed:', error);
+          },
+        }
+      );
     }
   }
 }

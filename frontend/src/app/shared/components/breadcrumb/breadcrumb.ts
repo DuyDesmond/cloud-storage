@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, input, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -12,26 +12,26 @@ import { BreadcrumbItem } from '../../../core/file-operations/services/file-oper
   styleUrls: ['./breadcrumb.scss']
 })
 export class Breadcrumb {
-  @Input() breadcrumbs: BreadcrumbItem[] = [];
-  @Input() section: 'drive' | 'shared-with-me' | 'trash' = 'drive';
-  @Input() title: string = '';
-  @Input() description: string = '';
+  breadcrumbs = input<BreadcrumbItem[]>([]);
+  section = input<'drive' | 'shared-with-me' | 'trash'>('drive');
+  title = input<string>('');
+  description = input<string>('');
 
-  get homeLink(): string {
-    switch (this.section) {
+  homeLink = computed(() => {
+    switch (this.section()) {
       case 'shared-with-me': return '/drive/shared-with-me';
       case 'trash': return '/trash';
       case 'drive':
       default: return '/drive/root';
     }
-  }
+  });
 
-  get homeIcon(): string {
-    switch (this.section) {
+  homeIcon = computed(() => {
+    switch (this.section()) {
       case 'shared-with-me': return 'group';
       case 'trash': return 'delete';
       case 'drive':
       default: return 'home';
     }
-  }
+  });
 }
