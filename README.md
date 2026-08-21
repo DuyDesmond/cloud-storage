@@ -18,3 +18,4 @@ The repo is used for interns of Cloud Fullstack program to practice following th
 
 - Frontend: `npm start`
 - Backend: `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
+- Backend-v2: `docker compose up --build`

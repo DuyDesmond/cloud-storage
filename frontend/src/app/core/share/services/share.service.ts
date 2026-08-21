@@ -25,7 +25,7 @@ export interface ShareState {
 @Injectable({ providedIn: 'root' })
 export class ShareService {
   private http = inject(HttpClient);
-  private apiUrl = `${environment.apiUrl}/api/v1/share`;
+  private apiUrl = `${environment.apiUrl}${environment.apiStr}/share`;
 
   getShareState(targetId: string, isFile: boolean): Observable<ShareState> {
     return this.http.get<ShareState>(`${this.apiUrl}/state`, {

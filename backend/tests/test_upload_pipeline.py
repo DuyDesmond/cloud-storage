@@ -1,3 +1,4 @@
+from app.core.config import settings
 import uuid
 from unittest.mock import AsyncMock, patch
 import pytest
@@ -25,7 +26,7 @@ def test_request_presigned_upload_unauthorized():
     app.dependency_overrides[get_db_connection] = mock_get_db
     try:
         response = client.post(
-            "/api/v1/storage/upload/presign",
+            f"{settings.API_STR}/storage/upload/presign",
             json={"file_name": "test.txt", "size_bytes": 100},
         )
         assert response.status_code == 401
@@ -82,7 +83,7 @@ def test_presigned_upload_and_complete_flow():
 
             # 1. Request presigned URL
             res1 = client.post(
-                "/api/v1/storage/upload/presign",
+                f"{settings.API_STR}/storage/upload/presign",
                 json={"file_name": "test.txt", "size_bytes": 100, "mime_type": "text/plain"},
             )
             assert res1.status_code == 200
@@ -92,7 +93,7 @@ def test_presigned_upload_and_complete_flow():
 
             # 2. Complete upload
             res2 = client.post(
-                "/api/v1/storage/upload/complete",
+                f"{settings.API_STR}/storage/upload/complete",
                 json={
                     "storage_key": data1["storage_key"],
                     "file_name": "test.txt",
@@ -151,7 +152,7 @@ def test_multipart_upload_flow():
 
             # Initiate
             res1 = client.post(
-                "/api/v1/storage/upload/multipart/initiate",
+                f"{settings.API_STR}/storage/upload/multipart/initiate",
                 json={"file_name": "large_file.iso", "size_bytes": 200000000},
             )
             assert res1.status_code == 200
@@ -160,7 +161,7 @@ def test_multipart_upload_flow():
 
             # Presign Part
             res2 = client.post(
-                "/api/v1/storage/upload/multipart/presign-part",
+                f"{settings.API_STR}/storage/upload/multipart/presign-part",
                 json={
                     "upload_id": data1["upload_id"],
                     "storage_key": data1["storage_key"],
@@ -172,7 +173,7 @@ def test_multipart_upload_flow():
 
             # Complete Multipart
             res3 = client.post(
-                "/api/v1/storage/upload/multipart/complete",
+                f"{settings.API_STR}/storage/upload/multipart/complete",
                 json={
                     "upload_id": data1["upload_id"],
                     "storage_key": data1["storage_key"],
@@ -186,7 +187,7 @@ def test_multipart_upload_flow():
 
             # Abort Multipart
             res4 = client.post(
-                "/api/v1/storage/upload/multipart/abort",
+                f"{settings.API_STR}/storage/upload/multipart/abort",
                 json={
                     "upload_id": data1["upload_id"],
                     "storage_key": data1["storage_key"],

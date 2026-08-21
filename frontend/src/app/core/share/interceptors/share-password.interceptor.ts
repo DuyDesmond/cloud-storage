@@ -5,6 +5,7 @@ import {
   HttpErrorResponse
 } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { environment } from '../../../../environments/environment';
 import { MatDialog } from '@angular/material/dialog';
 import {
   catchError,
@@ -29,7 +30,7 @@ export const sharePasswordInterceptor: HttpInterceptorFn = (req, next) => {
   const password = passwordService.getPassword();
   let modifiedReq = req;
 
-  if (password && req.url.includes('/api/v1/storage')) {
+  if (password && req.url.includes(`${environment.apiStr}/storage`)) {
     modifiedReq = req.clone({
       setHeaders: { 'X-Share-Password': password }
     });

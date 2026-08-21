@@ -34,7 +34,7 @@ describe('ShareService', () => {
       expect(res).toBeTruthy();
     });
 
-    const req = httpMock.expectOne(request => request.url === `${environment.apiUrl}/api/v1/share/state` && request.params.get('target_id') === 'item-1' && request.params.get('is_file') === 'true');
+    const req = httpMock.expectOne(request => request.url === `${environment.apiUrl}${environment.apiStr}/share/state` && request.params.get('target_id') === 'item-1' && request.params.get('is_file') === 'true');
     expect(req.request.method).toBe('GET');
     req.flush({ public_link: {}, users: [] });
   });
@@ -44,7 +44,7 @@ describe('ShareService', () => {
       expect(res.message).toBe('Success');
     });
 
-    const req = httpMock.expectOne(`${environment.apiUrl}/api/v1/share/user`);
+    const req = httpMock.expectOne(`${environment.apiUrl}${environment.apiStr}/share/user`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ target_id: 'item-1', is_file: true, email: 'test@example.com', permission: 'view', password: null });
     req.flush({ message: 'Success' });
@@ -55,7 +55,7 @@ describe('ShareService', () => {
       expect(res.message).toBe('Success');
     });
 
-    const req = httpMock.expectOne(`${environment.apiUrl}/api/v1/share/user`);
+    const req = httpMock.expectOne(`${environment.apiUrl}${environment.apiStr}/share/user`);
     expect(req.request.method).toBe('DELETE');
     expect(req.request.body).toEqual({ target_id: 'item-1', is_file: true, email: 'test@example.com' });
     req.flush({ message: 'Success' });
@@ -66,7 +66,7 @@ describe('ShareService', () => {
       expect(res.message).toBe('Success');
     });
 
-    const req = httpMock.expectOne(`${environment.apiUrl}/api/v1/share/public`);
+    const req = httpMock.expectOne(`${environment.apiUrl}${environment.apiStr}/share/public`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ target_id: 'item-1', is_file: true, enabled: true, permission: 'edit', password: null });
     req.flush({ message: 'Success' });

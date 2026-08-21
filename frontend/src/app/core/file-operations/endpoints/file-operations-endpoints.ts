@@ -1,33 +1,33 @@
 import { environment } from '../../../../environments/environment';
 
 export const FILE_OPERATION_ENDPOINTS = {
-  getSharedWithMe: `${environment.apiUrl}/api/v1/storage/shared-with-me`,
-  getBreadcrumbs: `${environment.apiUrl}/api/v1/storage/breadcrumbs`,
-  uploadFiles: `${environment.apiUrl}/api/v1/storage/files`,
-  folders: `${environment.apiUrl}/api/v1/storage/folders`,
-  getStorage: `${environment.apiUrl}/api/v1/storage/retrieve`,
-  uploadPresign: `${environment.apiUrl}/api/v1/storage/upload/presign`,
-  uploadComplete: `${environment.apiUrl}/api/v1/storage/upload/complete`,
-  multipartInitiate: `${environment.apiUrl}/api/v1/storage/upload/multipart/initiate`,
-  multipartPresignPart: `${environment.apiUrl}/api/v1/storage/upload/multipart/presign-part`,
-  multipartComplete: `${environment.apiUrl}/api/v1/storage/upload/multipart/complete`,
-  multipartAbort: `${environment.apiUrl}/api/v1/storage/upload/multipart/abort`,
+  getSharedWithMe: `${environment.apiUrl}${environment.apiStr}/storage/shared-with-me`,
+  getBreadcrumbs: `${environment.apiUrl}${environment.apiStr}/storage/breadcrumbs`,
+  uploadFiles: `${environment.apiUrl}${environment.apiStr}/storage/files`,
+  folders: `${environment.apiUrl}${environment.apiStr}/storage/folders`,
+  getStorage: `${environment.apiUrl}${environment.apiStr}/storage/retrieve`,
+  uploadPresign: `${environment.apiUrl}${environment.apiStr}/storage/upload/presign`,
+  uploadComplete: `${environment.apiUrl}${environment.apiStr}/storage/upload/complete`,
+  multipartInitiate: `${environment.apiUrl}${environment.apiStr}/storage/upload/multipart/initiate`,
+  multipartPresignPart: `${environment.apiUrl}${environment.apiStr}/storage/upload/multipart/presign-part`,
+  multipartComplete: `${environment.apiUrl}${environment.apiStr}/storage/upload/multipart/complete`,
+  multipartAbort: `${environment.apiUrl}${environment.apiStr}/storage/upload/multipart/abort`,
   downloadFile: (fileId: string) =>
-    `${environment.apiUrl}/api/v1/storage/files/${fileId}/download`,
-  createFolder: `${environment.apiUrl}/api/v1/storage/folders`,
+    `${environment.apiUrl}${environment.apiStr}/storage/files/${fileId}/download`,
+  createFolder: `${environment.apiUrl}${environment.apiStr}/storage/folders`,
   trashFile: (fileId: string) =>
-    `${environment.apiUrl}/api/v1/storage/files/${fileId}`,
+    `${environment.apiUrl}${environment.apiStr}/storage/files/${fileId}`,
   trashFolder: (folderId: string) =>
-    `${environment.apiUrl}/api/v1/storage/folders/${folderId}`,
-  getTrashed: `${environment.apiUrl}/api/v1/storage/trash`,
+    `${environment.apiUrl}${environment.apiStr}/storage/folders/${folderId}`,
+  getTrashed: `${environment.apiUrl}${environment.apiStr}/storage/trash`,
   restoreFile: (fileID: string) =>
-    `${environment.apiUrl}/api/v1/storage/trash/files/${fileID}/restore`,
+    `${environment.apiUrl}${environment.apiStr}/storage/trash/files/${fileID}/restore`,
   restoreFolder: (folderID: string) =>
-    `${environment.apiUrl}/api/v1/storage/trash/folders/${folderID}/restore`,
+    `${environment.apiUrl}${environment.apiStr}/storage/trash/folders/${folderID}/restore`,
   hardDeleteFile: (fileID: string) =>
-    `${environment.apiUrl}/api/v1/storage/trash/files/${fileID}`,
+    `${environment.apiUrl}${environment.apiStr}/storage/trash/files/${fileID}`,
   hardDeleteFolder: (folderID: string) =>
-    `${environment.apiUrl}/api/v1/storage/trash/folders/${folderID}`,
-  emptyTrash: `${environment.apiUrl}/api/v1/storage/trash/empty`,
-  storageUsage: `${environment.apiUrl}/api/v1/storage/usage`,
+    `${environment.apiUrl}${environment.apiStr}/storage/trash/folders/${folderID}`,
+  emptyTrash: `${environment.apiUrl}${environment.apiStr}/storage/trash/empty`,
+  storageUsage: `${environment.apiUrl}${environment.apiStr}/storage/usage`,
 };
