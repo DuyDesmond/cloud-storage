@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
@@ -47,11 +47,11 @@ export class ShareDialog implements OnInit {
   shareUserForm: FormGroup;
   publicLinkForm: FormGroup;
 
-  constructor(
-    public dialogRef: MatDialogRef<ShareDialog>,
-    @Inject(MAT_DIALOG_DATA) public data: { item: DriveItem }
-  ) {
-    this.item = data.item;
+  public dialogRef = inject<MatDialogRef<ShareDialog>>(MatDialogRef);
+  public data = inject<{ item: DriveItem }>(MAT_DIALOG_DATA);
+
+  constructor() {
+    this.item = this.data.item;
     this.isFile = this.item.itemType === 'file';
 
     this.shareUserForm = this.fb.group({

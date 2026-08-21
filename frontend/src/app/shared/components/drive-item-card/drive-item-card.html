@@ -51,7 +51,7 @@
     @if (item().itemType === 'file' && $any(item()).previewUrl) {
     <img [src]="$any(item()).previewUrl" [alt]="item().name" />
     } @else {
-    <mat-icon class="large-icon" [ngClass]="item().itemType">
+    <mat-icon class="large-icon" [class]="item().itemType">
       {{ iconName() }}
     </mat-icon>
     }

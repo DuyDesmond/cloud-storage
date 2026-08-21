@@ -43,6 +43,7 @@ import { UploadWidget } from '../upload-widget/upload-widget';
 import { TraversedFolderItem } from '../../shared/utils/folder-traversal';
 import { AuthService } from '@core/auth/services/auth.service';
 import { ShareDialog } from '../share-dialog/share-dialog';
+import { FilePreview } from '../file-preview/file-preview';
 
 import { Breadcrumb } from '../../shared/components/breadcrumb/breadcrumb';
 
@@ -360,8 +361,15 @@ export class Drive implements OnInit, OnDestroy {
     if (item.itemType === 'folder') {
       const section = this.currentSection();
       this.router.navigateByUrl(`/drive/${section}/folder/${item.id}`);
+    } else {
+      this.dialog.open(FilePreview, {
+        width: '80vw',
+        height: '80vh',
+        maxWidth: '1200px',
+        panelClass: 'preview-dialog-panel',
+        data: { item },
+      });
     }
-    // File preview: future implementation
   }
 
   onDownloadItem(item: DriveItem): void {

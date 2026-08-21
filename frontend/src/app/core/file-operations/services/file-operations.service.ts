@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import {
   HttpClient,
   HttpEvent,
@@ -128,7 +128,7 @@ export interface AbortMultipartUploadRequestPayload {
   providedIn: 'root',
 })
 export class FileOperationsService {
-  constructor(private http: HttpClient) {}
+  private http = inject(HttpClient);
 
   public toDriveFile(file: BackendFileResponse): DriveFileItem {
     return {
