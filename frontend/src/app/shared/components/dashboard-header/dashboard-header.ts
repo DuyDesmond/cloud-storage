@@ -1,16 +1,14 @@
-import { Component, EventEmitter, input, output } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, input, output } from '@angular/core';
+import { NgOptimizedImage } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { HostBinding } from '@angular/core';
 
 @Component({
   selector: 'app-dashboard-header',
-  standalone: true,
-  imports: [CommonModule, RouterModule, MatButtonModule, MatIconModule],
+  imports: [RouterModule, MatButtonModule, MatIconModule, NgOptimizedImage],
   templateUrl: './dashboard-header.html',
-  styleUrls: ['./dashboard-header.scss'],
+  styleUrl: './dashboard-header.scss',
 })
 export class DashboardHeader {
   searchPlaceholder = input<string>('Search files...');

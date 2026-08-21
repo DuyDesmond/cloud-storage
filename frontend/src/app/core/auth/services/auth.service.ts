@@ -2,7 +2,6 @@ import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
-import { environment } from '../../../../environments/environment';
 import { AUTH_ENDPOINTS } from '../endpoints/auth-endpoints';
 
 export interface User {

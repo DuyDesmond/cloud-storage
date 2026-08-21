@@ -1,13 +1,13 @@
-import { Component, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, inject, signal, DestroyRef } from '@angular/core';
+
 import {
   FormBuilder,
-  FormGroup,
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '@core/auth/services/auth.service';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -19,9 +19,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
 @Component({
   selector: 'app-login',
-  standalone: true,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     RouterLink,
     MatFormFieldModule,
@@ -33,19 +31,20 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
     MatProgressSpinnerModule,
   ],
   templateUrl: './login.html',
-  styleUrls: ['./login.scss'],
+  styleUrl: './login.scss',
 })
 export class Login {
   private fb = inject(FormBuilder);
   private authService = inject(AuthService);
   private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
 
-  loginForm: FormGroup = this.fb.group({
+  loginForm = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(6)]],
     remember: [false],
   });
-  
+
   showPassword = false;
   isLoading = signal(false);
   errorMessage = signal<string | null>(null);
@@ -63,19 +62,25 @@ export class Login {
     this.isLoading.set(true);
     this.errorMessage.set(null);
 
-    const { email, password } = this.loginForm.value;
+    // Form values are now strictly inferred as strings/booleans
+    const { email, password } = this.loginForm.getRawValue();
 
-    this.authService.login(email, password).subscribe({
-      next: (user) => {
-        this.isLoading.set(false);
-        if (user && user.email) {
-          this.router.navigate(['/drive']);
-        }
-      },
-      error: (err) => {
-        this.isLoading.set(false);
-        this.errorMessage.set('Invalid email or password. Please try again.');
-      },
-    });
+    // Prevent execution on empty required fields
+    if (!email || !password) return;
+
+    this.authService.login(email, password)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (user) => {
+          this.isLoading.set(false);
+          if (user && user.email) {
+            this.router.navigate(['/drive']);
+          }
+        },
+        error: (err: unknown) => {
+          this.isLoading.set(false);
+          this.errorMessage.set('Invalid email or password. Please try again.');
+        },
+      });
   }
 }

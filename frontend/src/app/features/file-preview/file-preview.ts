@@ -1,5 +1,6 @@
-import { Component, Inject, OnInit, inject, signal, OnDestroy } from '@angular/core';
+import { Component, OnInit, inject, signal, OnDestroy, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   MAT_DIALOG_DATA,
   MatDialogRef,
@@ -15,9 +16,7 @@ import { FileOperationsService } from '../../core/file-operations/services/file-
 
 @Component({
   selector: 'app-file-preview',
-  standalone: true,
   imports: [
-    CommonModule,
     MatDialogModule,
     MatButtonModule,
     MatIconModule,
@@ -25,16 +24,17 @@ import { FileOperationsService } from '../../core/file-operations/services/file-
     MatDividerModule
   ],
   templateUrl: './file-preview.html',
-  styleUrls: ['./file-preview.scss'],
+  styleUrl: './file-preview.scss',
 })
 export class FilePreview implements OnInit, OnDestroy {
   public dialogRef = inject<MatDialogRef<FilePreview>>(MatDialogRef);
   public data = inject<{ item: DriveItem }>(MAT_DIALOG_DATA);
   private fileService = inject(FileOperationsService);
   private sanitizer = inject(DomSanitizer);
+  private destroyRef = inject(DestroyRef);
 
   item: DriveFileItem;
-  
+
   isLoading = signal(true);
   hasError = signal(false);
   previewUrl = signal<SafeResourceUrl | null>(null);
@@ -52,19 +52,21 @@ export class FilePreview implements OnInit, OnDestroy {
       return;
     }
 
-    this.fileService.downloadFile(this.item.id).subscribe({
-      next: (blob) => {
-        this.rawUrl = URL.createObjectURL(blob);
-        // Trust the URL so Angular can bind it to iframe/embed/img tags
-        this.previewUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.rawUrl));
-        this.isLoading.set(false);
-      },
-      error: (err) => {
-        console.error('Failed to load file preview', err);
-        this.hasError.set(true);
-        this.isLoading.set(false);
-      }
-    });
+    this.fileService.downloadFile(this.item.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (blob) => {
+          this.rawUrl = URL.createObjectURL(blob);
+          // Trust the URL so Angular can bind it to iframe/embed/img tags
+          this.previewUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.rawUrl));
+          this.isLoading.set(false);
+        },
+        error: (err: unknown) => {
+          console.error('Failed to load file preview', err);
+          this.hasError.set(true);
+          this.isLoading.set(false);
+        }
+      });
   }
 
   ngOnDestroy(): void {

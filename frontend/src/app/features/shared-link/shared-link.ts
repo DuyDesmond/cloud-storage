@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ShareService } from '../../core/share/services/share.service';
@@ -8,8 +8,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 @Component({
   selector: 'app-shared-link',
-  standalone: true,
-  imports: [CommonModule, MatProgressSpinnerModule, MatSnackBarModule],
+  imports: [MatProgressSpinnerModule, MatSnackBarModule],
   templateUrl: './shared-link.html',
   styleUrl: './shared-link.scss'
 })

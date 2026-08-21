@@ -1,15 +1,14 @@
 import { Component, input, output, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { UpperCasePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { SidePanelNavKey, SidePanelNavItem } from '../side-panel/side-panel'; // Adjust path if necessary
 
 @Component({
   selector: 'app-mobile-bottom-nav',
-  standalone: true,
-  imports: [CommonModule, MatIconModule],
+  imports: [MatIconModule, UpperCasePipe],
   templateUrl: './mobile-bottom-nav.html',
-  styleUrls: ['./mobile-bottom-nav.scss'],
+  styleUrl: './mobile-bottom-nav.scss',
 })
 export class MobileBottomNav {
   private router = inject(Router);

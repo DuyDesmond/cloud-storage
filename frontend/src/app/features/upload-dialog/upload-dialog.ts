@@ -1,5 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -20,9 +20,7 @@ export interface UploadDialogResult {
 
 @Component({
   selector: 'app-upload-dialog',
-  standalone: true,
   imports: [
-    CommonModule,
     MatDialogModule,
     MatButtonModule,
     MatIconModule,
@@ -30,7 +28,7 @@ export interface UploadDialogResult {
     FormsModule,
   ],
   templateUrl: './upload-dialog.html',
-  styleUrls: ['./upload-dialog.scss'],
+  styleUrl: './upload-dialog.scss',
 })
 export class UploadDialog {
   private dialogRef = inject(MatDialogRef<UploadDialog>);

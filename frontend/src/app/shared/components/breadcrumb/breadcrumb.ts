@@ -1,15 +1,13 @@
 import { Component, input, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { BreadcrumbItem } from '../../../core/file-operations/services/file-operations.service';
 
 @Component({
   selector: 'app-breadcrumb',
-  standalone: true,
-  imports: [CommonModule, RouterModule, MatIconModule],
+  imports: [RouterModule, MatIconModule],
   templateUrl: './breadcrumb.html',
-  styleUrls: ['./breadcrumb.scss']
+  styleUrl: './breadcrumb.scss'
 })
 export class Breadcrumb {
   breadcrumbs = input<BreadcrumbItem[]>([]);

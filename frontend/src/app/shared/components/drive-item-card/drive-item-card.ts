@@ -1,5 +1,5 @@
 import { Component, input, output, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
@@ -7,10 +7,9 @@ import { DriveItem } from './drive-item.model';
 
 @Component({
   selector: 'app-drive-item-card',
-  standalone: true,
-  imports: [CommonModule, MatIconModule, MatButtonModule, MatMenuModule],
+  imports: [MatIconModule, MatButtonModule, MatMenuModule, DatePipe],
   templateUrl: './drive-item-card.html',
-  styleUrls: ['./drive-item-card.scss'],
+  styleUrl: './drive-item-card.scss',
 })
 export class DriveItemCard {
   item = input.required<DriveItem>();

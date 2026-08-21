@@ -6,7 +6,7 @@ import {
   computed,
   inject,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { Router } from '@angular/router';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatButtonModule } from '@angular/material/button';
@@ -28,9 +28,7 @@ import { DriveItemCard } from '../../shared/components/drive-item-card/drive-ite
 
 @Component({
   selector: 'app-trash',
-  standalone: true,
   imports: [
-    CommonModule,
     MatProgressBarModule,
     MatButtonModule,
     MatIconModule,
@@ -42,7 +40,7 @@ import { DriveItemCard } from '../../shared/components/drive-item-card/drive-ite
     DriveItemCard,
   ],
   templateUrl: './trash.html',
-  styleUrls: ['./trash.scss'],
+  styleUrl: './trash.scss',
 })
 export class Trash implements OnInit, OnDestroy {
   private fileService = inject(FileOperationsService);

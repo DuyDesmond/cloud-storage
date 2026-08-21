@@ -1,5 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -11,16 +11,14 @@ import {
 
 @Component({
   selector: 'app-upload-widget',
-  standalone: true,
   imports: [
-    CommonModule,
     MatIconModule,
     MatButtonModule,
     MatProgressBarModule,
     MatTooltipModule,
   ],
   templateUrl: './upload-widget.html',
-  styleUrls: ['./upload-widget.scss'],
+  styleUrl: './upload-widget.scss',
 })
 export class UploadWidget {
   uploadQueueService = inject(UploadQueueService);
