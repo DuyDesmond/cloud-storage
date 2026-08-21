@@ -1,4 +1,4 @@
-﻿import {
+import {
   Component,
   inject,
   signal,
@@ -6,7 +6,7 @@
   OnInit,
   OnDestroy,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -33,9 +33,7 @@ import { ShareDialog } from '../share-dialog/share-dialog';
 import { Breadcrumb } from '../../shared/components/breadcrumb/breadcrumb';
 @Component({
   selector: 'app-shared-with-me',
-  standalone: true,
   imports: [
-    CommonModule,
     RouterModule,
     MatIconModule,
     MatButtonModule,
@@ -48,7 +46,7 @@ import { Breadcrumb } from '../../shared/components/breadcrumb/breadcrumb';
     Breadcrumb,
   ],
   templateUrl: './shared-with-me.html',
-  styleUrls: ['../drive/drive.scss'], // Reusing drive layout styles
+  styleUrl: '../drive/drive.scss', // Reusing drive layout styles
 })
 export class SharedWithMe implements OnInit, OnDestroy {
   readonly storageState = inject(StorageStateService);

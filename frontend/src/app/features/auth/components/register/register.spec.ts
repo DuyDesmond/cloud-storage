@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { By } from '@angular/platform-browser';
 import { of, throwError } from 'rxjs';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -22,7 +22,8 @@ describe('Register', () => {
       imports: [Register],
       providers: [
         { provide: AuthService, useValue: authServiceSpy },
-        { provide: Router, useValue: routerSpy }
+        { provide: Router, useValue: routerSpy },
+        { provide: ActivatedRoute, useValue: {} }
       ],
     }).compileComponents();
 
@@ -52,7 +53,7 @@ describe('Register', () => {
   });
 
   it('should correctly evaluate the isFormReady getter', () => {
-    expect(component.isFormReady).toBe(false);
+    expect(component.isFormReady()).toBe(false);
 
     component.registerForm.patchValue({
       username: 'Jane Doe',
@@ -62,7 +63,7 @@ describe('Register', () => {
       terms: true
     });
 
-    expect(component.isFormReady).toBe(true);
+    expect(component.isFormReady()).toBe(true);
   });
 
   it('should toggle password and confirm password visibility', () => {
@@ -150,7 +151,7 @@ describe('Register', () => {
     });
 
     // Even if the reactive form considers it valid, our getter should catch the empty trim
-    expect(component.isFormReady).toBe(false);
+    expect(component.isFormReady()).toBe(false);
   });
 
   it('should clear the passwordMismatch error when passwords are corrected', () => {

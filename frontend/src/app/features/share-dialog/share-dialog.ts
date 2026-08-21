@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -20,7 +20,6 @@ import { ShareService, ShareState, SharedUser } from '../../core/share/services/
 @Component({
   selector: 'app-share-dialog',
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
     MatButtonModule,
@@ -32,7 +31,7 @@ import { ShareService, ShareState, SharedUser } from '../../core/share/services/
     MatProgressSpinnerModule
   ],
   templateUrl: './share-dialog.html',
-  styleUrls: ['./share-dialog.scss'],
+  styleUrl: './share-dialog.scss',
 })
 export class ShareDialog implements OnInit {
   private shareService = inject(ShareService);

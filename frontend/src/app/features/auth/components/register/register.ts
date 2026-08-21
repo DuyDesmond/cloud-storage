@@ -1,5 +1,5 @@
 import { Component, inject, signal, computed, DestroyRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import {
   AbstractControl,
   FormBuilder,
@@ -39,7 +39,6 @@ export const passwordMatchValidator: ValidatorFn = (
 @Component({
   selector: 'app-register',
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     RouterLink,
     MatFormFieldModule,
@@ -51,7 +50,7 @@ export const passwordMatchValidator: ValidatorFn = (
     MatProgressSpinnerModule,
   ],
   templateUrl: './register.html',
-  styleUrls: ['./register.scss'],
+  styleUrl: './register.scss',
 })
 export class Register {
   private fb = inject(FormBuilder);

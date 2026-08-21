@@ -142,7 +142,7 @@
           color="primary"
           type="submit"
           class="submit-button"
-          [disabled]="!isFormReady || isLoading() || registerForm.invalid"
+          [disabled]="!isFormReady() || isLoading() || registerForm.invalid"
         >
           @if (isLoading()) {
           <mat-spinner diameter="20"></mat-spinner>

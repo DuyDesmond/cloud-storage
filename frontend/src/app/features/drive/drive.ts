@@ -13,7 +13,7 @@ import {
   DestroyRef
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { CommonModule } from '@angular/common';
+
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -85,7 +85,6 @@ type DriveSection = 'root' | 'shared-with-me';
 @Component({
   selector: 'app-drive',
   imports: [
-    CommonModule,
     RouterModule,
     MatIconModule,
     MatButtonModule,
@@ -99,7 +98,7 @@ type DriveSection = 'root' | 'shared-with-me';
     Breadcrumb,
   ],
   templateUrl: './drive.html',
-  styleUrls: ['./drive.scss'],
+  styleUrl: './drive.scss',
 })
 export class Drive implements OnInit, OnDestroy {
   readonly storageState = inject(StorageStateService);
@@ -218,26 +217,25 @@ export class Drive implements OnInit, OnDestroy {
     const folderId = folderIdx !== -1 ? (parts[folderIdx + 1] ?? null) : null;
 
     const prevFolderId = this.currentFolderId();
+    const prevNav = this.currentNav();
+    let newNav: SidePanelNavKey = 'home';
+
+    if (path.includes('shared-with-me')) {
+      newNav = 'shared';
+    } else if (path.includes('trash')) {
+      newNav = 'trash';
+    } else if (path.includes('starred')) {
+      newNav = 'home';
+    } else if (path.includes('recent')) {
+      newNav = 'recent';
+    }
 
     // Skip if nothing changed (prevents double-fetching on router events that aren't navigations)
-    if (this.initialized && prevFolderId === folderId) return;
+    if (this.initialized && prevFolderId === folderId && prevNav === newNav) return;
     this.initialized = true;
 
     this.currentFolderId.set(folderId);
-
-    if (path.includes('shared-with-me')) {
-      this.currentNav.set('shared');
-    } else if (path.includes('trash')) {
-      this.currentNav.set('trash');
-    } else if (path.includes('starred')) {
-      // this.currentNav.set('starred');
-      // Placeholder until Favorites page is implemented
-      this.currentNav.set('home');
-    } else if (path.includes('recent')) {
-      this.currentNav.set('recent');
-    } else {
-      this.currentNav.set('home'); // Default fallback
-    }
+    this.currentNav.set(newNav);
 
     if (folderId) {
       this.fetchBreadcrumbs(folderId, false);

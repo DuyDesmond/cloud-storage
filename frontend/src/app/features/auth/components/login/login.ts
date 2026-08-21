@@ -1,5 +1,5 @@
 import { Component, inject, signal, DestroyRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import {
   FormBuilder,
   ReactiveFormsModule,
@@ -20,7 +20,6 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 @Component({
   selector: 'app-login',
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     RouterLink,
     MatFormFieldModule,
@@ -32,7 +31,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
     MatProgressSpinnerModule,
   ],
   templateUrl: './login.html',
-  styleUrls: ['./login.scss'],
+  styleUrl: './login.scss',
 })
 export class Login {
   private fb = inject(FormBuilder);

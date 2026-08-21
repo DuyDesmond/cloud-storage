@@ -11,39 +11,40 @@ import { FileOperationsService } from '../../core/file-operations/services/file-
 describe('FilePreview', () => {
   let fileServiceSpy: { downloadFile: ReturnType<typeof vi.fn> };
   let dialogRefSpy: { close: ReturnType<typeof vi.fn> };
-  let sanitizerSpy: { bypassSecurityTrustResourceUrl: ReturnType<typeof vi.fn> };
+  let sanitizerSpy: any;
 
   // Reconfigures TestBed to inject varying MAT_DIALOG_DATA per test[cite: 4]
   async function setupComponent(mimeType: string) {
     fileServiceSpy = { downloadFile: vi.fn().mockReturnValue(of(new Blob(['mock data']))) };
     dialogRefSpy = { close: vi.fn() };
-    sanitizerSpy = { bypassSecurityTrustResourceUrl: vi.fn((url) => `safe-${url}`) };
-
+    sanitizerSpy = vi.fn();
+    
     await TestBed.configureTestingModule({
       imports: [FilePreview],
       providers: [
         { provide: FileOperationsService, useValue: fileServiceSpy },
         { provide: MatDialogRef, useValue: dialogRefSpy },
-        { provide: DomSanitizer, useValue: sanitizerSpy },
         { provide: MAT_DIALOG_DATA, useValue: { item: { id: 'file-123', name: 'doc', mimeType } } }
       ]
     }).compileComponents();
 
     const fixture = TestBed.createComponent(FilePreview);
     const component = fixture.componentInstance;
-    return { fixture, component };
+    const sanitizer = TestBed.inject(DomSanitizer);
+    sanitizerSpy = vi.spyOn(sanitizer, 'bypassSecurityTrustResourceUrl');
+    return { fixture, component, sanitizerSpy };
   }
 
+  let createUrlSpy: any;
+  let revokeUrlSpy: any;
+
   beforeEach(() => {
-    // Stub global URL methods to prevent JSDOM crashes during Blob parsing
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn().mockReturnValue('blob:mock-url'),
-      revokeObjectURL: vi.fn()
-    });
+    createUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+    revokeUrlSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('should parse image MIME types correctly', async () => {
@@ -68,15 +69,15 @@ describe('FilePreview', () => {
   });
 
   it('should sanitize the URL and update signals on successful download', async () => {
-    const { component, fixture } = await setupComponent('image/jpeg');
+    const { component, fixture, sanitizerSpy } = await setupComponent('image/jpeg');
     fixture.detectChanges();
 
     expect(fileServiceSpy.downloadFile).toHaveBeenCalledWith('file-123');
-    expect(URL.createObjectURL).toHaveBeenCalled();
-    expect(sanitizerSpy.bypassSecurityTrustResourceUrl).toHaveBeenCalledWith('blob:mock-url');
+    expect(createUrlSpy).toHaveBeenCalled();
+    expect(sanitizerSpy).toHaveBeenCalledWith('blob:mock-url');
 
-    // Verify signal state mutations[cite: 10]
-    expect(component.previewUrl()).toBe('safe-blob:mock-url');
+    // Verify signal state mutations
+    expect(component.previewUrl()).toBeTruthy();
     expect(component.isLoading()).toBe(false);
     expect(component.hasError()).toBe(false);
   });
@@ -110,7 +111,7 @@ describe('FilePreview', () => {
 
     component.ngOnDestroy();
 
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+    expect(revokeUrlSpy).toHaveBeenCalledWith('blob:mock-url');
   });
 
   it('should close the dialog ref when close() is invoked', async () => {

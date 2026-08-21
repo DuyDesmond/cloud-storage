@@ -1,6 +1,6 @@
 import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
 import { Component, inject, signal, computed, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatButtonModule } from '@angular/material/button';
@@ -39,9 +39,7 @@ export type ActionKey =
 
 @Component({
   selector: 'app-user-profile',
-  standalone: true,
   imports: [
-    CommonModule,
     MatIconModule,
     MatProgressBarModule,
     MatButtonModule,
@@ -50,7 +48,7 @@ export type ActionKey =
     MobileBottomNav,
   ],
   templateUrl: './user-profile.html',
-  styleUrls: ['./user-profile.scss'],
+  styleUrl: './user-profile.scss',
 })
 export class UserProfile implements OnInit {
   private authService = inject(AuthService);

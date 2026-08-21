@@ -1,7 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { By } from '@angular/platform-browser';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { of, throwError } from 'rxjs';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -40,7 +39,6 @@ describe('ShareDialog', () => {
     await TestBed.configureTestingModule({
       imports: [ShareDialog],
       providers: [
-        provideNoopAnimations(),
         { provide: ShareService, useValue: shareServiceSpy },
         { provide: MatDialogRef, useValue: dialogRefSpy },
         {

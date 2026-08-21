@@ -6,7 +6,6 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -28,14 +27,13 @@ export interface SidePanelNavItem {
 
 @Component({
   selector: 'app-side-panel',
-  standalone: true,
-  imports: [CommonModule, MatButtonModule, MatIconModule, MatProgressBarModule],
+  imports: [MatButtonModule, MatIconModule, MatProgressBarModule],
   host: {
     '[class.is-collapsed]': 'isCollapsed()',
     '[attr.aria-expanded]': '!isCollapsed()',
   },
   templateUrl: './side-panel.html',
-  styleUrls: ['./side-panel.scss'],
+  styleUrl: './side-panel.scss',
 })
 export class SidePanel {
   private router = inject(Router);

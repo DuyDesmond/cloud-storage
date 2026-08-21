@@ -17,7 +17,6 @@ import { FileOperationsService } from '../../core/file-operations/services/file-
 @Component({
   selector: 'app-file-preview',
   imports: [
-    CommonModule,
     MatDialogModule,
     MatButtonModule,
     MatIconModule,
@@ -25,7 +24,7 @@ import { FileOperationsService } from '../../core/file-operations/services/file-
     MatDividerModule
   ],
   templateUrl: './file-preview.html',
-  styleUrls: ['./file-preview.scss'],
+  styleUrl: './file-preview.scss',
 })
 export class FilePreview implements OnInit, OnDestroy {
   public dialogRef = inject<MatDialogRef<FilePreview>>(MatDialogRef);
