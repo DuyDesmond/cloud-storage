@@ -4,7 +4,7 @@ FROM nginx:alpine
 RUN rm /etc/nginx/conf.d/default.conf || true
 
 # Copy our custom configuration
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY nginx3.conf /etc/nginx/nginx.conf
 
 EXPOSE 80
 

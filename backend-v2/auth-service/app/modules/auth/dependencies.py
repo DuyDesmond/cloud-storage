@@ -53,11 +53,38 @@ async def get_current_user(
                     detail="Token has been revoked.",
                 )
 
+    import json
+
+    # Attempt to fetch user profile from cache
+    if redis_client:
+        cached_profile = await redis_client.get(f"user_profile:{user_id}")
+        if cached_profile:
+            user = json.loads(cached_profile)
+            # Reconstruct UUID fields natively
+            if "id" in user:
+                user["id"] = uuid.UUID(user["id"])
+            return user
+
     user = await auth_repository.get_by_id(conn, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found.",
         )
+
+    # Save user to cache for subsequent requests
+    if redis_client:
+        cache_data = dict(user)
+        # STRIP OUT SENSITIVE DATA
+        cache_data.pop("hashed_password", None)
+        
+        # Serialize UUIDs and Datetimes for JSON storage
+        for k, v in cache_data.items():
+            if isinstance(v, uuid.UUID):
+                cache_data[k] = str(v)
+            elif hasattr(v, "isoformat"):
+                cache_data[k] = v.isoformat()
+                
+        await redis_client.set(f"user_profile:{user_id}", json.dumps(cache_data), ex=3600)
 
     return user

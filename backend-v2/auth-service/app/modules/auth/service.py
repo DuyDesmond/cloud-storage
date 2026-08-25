@@ -152,6 +152,8 @@ class AuthService:
                 "events:user_deleted", 
                 json.dumps({"user_id": str(user_id)})
             )
+            # Invalidate user profile cache
+            await redis_client.delete(f"user_profile:{user_id}")
 
         # Clear active session cookies and revoke tokens
         await self.logout_user(user_id, response)
@@ -192,6 +194,8 @@ class AuthService:
         )
         
         await self._revoke_tokens(str(token_record["user_id"]))
+        if redis_client:
+            await redis_client.delete(f"user_profile:{token_record['user_id']}")
 
         return {"message": "Password successfully reset. You can now log in with your new password."}
 
@@ -217,5 +221,7 @@ class AuthService:
         await self.repo.update_password(conn, user_id, new_hashed)
         
         await self._revoke_tokens(str(user_id))
+        if redis_client:
+            await redis_client.delete(f"user_profile:{user_id}")
 
         return {"message": "Password updated successfully."}

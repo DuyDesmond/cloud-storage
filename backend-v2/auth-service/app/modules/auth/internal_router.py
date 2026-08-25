@@ -45,4 +45,9 @@ async def update_user_storage(
 ):
     """Internal endpoint for Storage Service to update user's storage usage."""
     await repo.update_user_storage(conn, user_id, payload.storage_used)
+    
+    from app.core.redis import redis_client
+    if redis_client:
+        await redis_client.delete(f"user_profile:{user_id}")
+        
     return {"status": "ok"}

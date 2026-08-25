@@ -3,13 +3,10 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-# In a production environment with Redis, we'd use:
-# from limits.storage import RedisStorage
-# storage_uri = "redis://localhost:6379"
-# limiter = Limiter(key_func=get_remote_address, storage_uri=storage_uri)
+from limits.storage import RedisStorage
+from app.core.config import settings
 
-# For now, we use the default memory storage
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_remote_address, storage_uri=settings.REDIS_URL)
 
 def setup_rate_limiting(app):
     app.state.limiter = limiter

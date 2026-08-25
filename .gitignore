@@ -32,6 +32,8 @@ __pycache__
 .env
 venv
 *.txt
+!*design_tables*.txt
+!requirements.txt
 .vscode
 postman
 .postman

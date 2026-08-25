@@ -87,9 +87,38 @@ class ShareService:
         return schemas.ShareStateResponse(public_link=public_link, users=users)
 
     async def visit_public_link(self, conn: asyncpg.Connection, share_token: str, user_id: uuid.UUID) -> dict:
-        acl = await share_repository.get_acl_by_token(conn, share_token)
+        from app.core.redis import redis_client
+        import json
+        
+        acl = None
+        if redis_client:
+            cached_acl = await redis_client.get(f"public_link_acl:{share_token}")
+            if cached_acl:
+                acl = json.loads(cached_acl)
+                # Reconstruct UUID fields natively
+                if "id" in acl and acl["id"]:
+                    acl["id"] = uuid.UUID(acl["id"])
+                if "file_id" in acl and acl["file_id"]:
+                    acl["file_id"] = uuid.UUID(acl["file_id"])
+                if "folder_id" in acl and acl["folder_id"]:
+                    acl["folder_id"] = uuid.UUID(acl["folder_id"])
+                    
         if not acl:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found or revoked.")
+            acl_row = await share_repository.get_acl_by_token(conn, share_token)
+            if not acl_row:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found or revoked.")
+            acl = dict(acl_row)
+            
+            if redis_client:
+                cache_data = dict(acl)
+                # Serialize UUIDs and datetimes for JSON storage
+                for k, v in cache_data.items():
+                    if isinstance(v, uuid.UUID):
+                        cache_data[k] = str(v)
+                    elif hasattr(v, "isoformat"):
+                        cache_data[k] = v.isoformat()
+                # Cache for 10 minutes to protect against viral traffic bursts
+                await redis_client.set(f"public_link_acl:{share_token}", json.dumps(cache_data), ex=600)
         
         await share_repository.upsert_public_link_visitor(conn, user_id, acl['id'])
         
