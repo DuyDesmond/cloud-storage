@@ -10,7 +10,7 @@ from app.core import database
 
 """
 to run this script, DO NOT `cd` INTO THE DIR, type:
-`python -m app.modules.auth.tables.apply_tables`
+`python -m auth-service.app.modules.auth.tables.apply_tables`
 """
 
 async def apply_tables():

@@ -48,7 +48,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_type t
         JOIN pg_namespace n ON n.oid = t.typnamespace
-        WHERE t.typname = 'permission_level' AND n.nspname = 'nephos'
+        WHERE t.typname = 'permission_level' AND n.nspname = 'storage'
     ) THEN
         CREATE TYPE storage.permission_level AS ENUM ('view', 'edit');
     END IF;

@@ -7,9 +7,9 @@ if not exist "%BASE_PATH%" (
     exit /b 1
 )
 
-echo Copying .env file to services...
-copy "%BASE_PATH%\.env" "%BASE_PATH%\auth-service\.env" /Y
-copy "%BASE_PATH%\.env" "%BASE_PATH%\storage-service\.env" /Y
+@REM echo Copying .env file to services...
+@REM copy "%BASE_PATH%\.env" "%BASE_PATH%\auth-service\.env" /Y
+@REM copy "%BASE_PATH%\.env" "%BASE_PATH%\storage-service\.env" /Y
 
 echo =============================================
 echo Starting Backend Services (without Docker)...
