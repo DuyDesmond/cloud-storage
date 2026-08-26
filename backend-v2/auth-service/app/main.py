@@ -38,7 +38,7 @@ setup_rate_limiting(app)
 app.include_router(auth_router, prefix=settings.API_STR)
 
 from app.modules.auth.internal_router import router as internal_router
-app.include_router(internal_router)
+app.include_router(internal_router, prefix=settings.API_STR)
 
 app.add_middleware(
     CORSMiddleware,
