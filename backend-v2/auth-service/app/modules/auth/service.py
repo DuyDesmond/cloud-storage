@@ -2,56 +2,41 @@ import secrets
 import asyncpg
 import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import HTTPException, Response, Depends, status
+from fastapi import HTTPException, Depends, status
 from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_token, decode_token
-from app.core.redis import redis_client
 from app.modules.auth.repository import AuthRepository
+from app.modules.auth.cache import CacheRepository
 from app.modules.auth import schemas
 
 class AuthService:
 
-    def __init__(self, repo: AuthRepository = Depends()):
-        # Default to real repository if none is passed
+    def __init__(self, repo: AuthRepository = Depends(), cache: CacheRepository = Depends()):
         self.repo = repo
+        self.cache = cache
 
     @staticmethod
-    def _set_token_cookies(response: Response, user_id: str) -> None:
-        """Helper to create and attach HttpOnly access and refresh cookies."""
+    def generate_tokens(user_id: str) -> dict:
+        """Helper to create access and refresh tokens."""
         access_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE)
         refresh_expires = timedelta(days=settings.REFRESH_TOKEN_EXPIRE)
 
         access_token = create_token({"sub": str(user_id), "type": "access"}, access_expires)
         refresh_token = create_token({"sub": str(user_id), "type": "refresh"}, refresh_expires)
 
-        # Set Access Token Cookie
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=int(access_expires.total_seconds()),
-        )
-
-        # Set Refresh Token Cookie
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=int(refresh_expires.total_seconds()),
-        )
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "access_expires_seconds": int(access_expires.total_seconds()),
+            "refresh_expires_seconds": int(refresh_expires.total_seconds()),
+        }
 
     async def register_user(
         self,
-        conn: asyncpg.Connection,
         payload: schemas.UserRegisterRequest,
-        response: Response,
-    ) -> schemas.UserResponse:
+    ) -> tuple[schemas.UserResponse, dict]:
         # Check if user exists using injected repo instance
-        existing_user = await self.repo.get_by_email(conn, payload.email)
+        existing_user = await self.repo.get_by_email(payload.email)
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -62,17 +47,17 @@ class AuthService:
         
         # Save user using injected repo instance
         new_user = await self.repo.create_user(
-            conn, payload.email, hashed_pwd, payload.full_name
+            payload.email, hashed_pwd, payload.full_name
         )
 
-        self._set_token_cookies(response, str(new_user["id"]))
-        return schemas.UserResponse(**new_user)
+        tokens = self.generate_tokens(str(new_user["id"]))
+        return schemas.UserResponse(**new_user), tokens
 
     async def login_user(
         self,
-        conn: asyncpg.Connection, credentials: schemas.UserLoginRequest, response: Response
-    ) -> schemas.UserResponse:
-        user = await self.repo.get_by_email(conn, credentials.email)
+        credentials: schemas.UserLoginRequest
+    ) -> tuple[schemas.UserResponse, dict]:
+        user = await self.repo.get_by_email(credentials.email)
         if not user or not verify_password(credentials.password, user["hashed_password"]):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -85,12 +70,10 @@ class AuthService:
                 detail="User account is inactive.",
             )
 
-        # Attach HttpOnly JWT Cookies
-        self._set_token_cookies(response, str(user["id"]))
+        tokens = self.generate_tokens(str(user["id"]))
+        return schemas.UserResponse(**user), tokens
 
-        return schemas.UserResponse(**user)
-
-    async def refresh_session(self, conn: asyncpg.Connection, refresh_token: str, response: Response) -> schemas.UserResponse:
+    async def refresh_session(self, refresh_token: str) -> tuple[schemas.UserResponse, dict]:
         payload = decode_token(refresh_token)
         if not payload or payload.get("type") != "refresh":
             raise HTTPException(
@@ -113,32 +96,28 @@ class AuthService:
                 detail="Invalid token subject identifier.",
             )
 
-        user = await self.repo.get_by_id(conn, user_id)
+        user = await self.repo.get_by_id(user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found.",
             )
 
-        self._set_token_cookies(response, str(user["id"]))
-
-        return schemas.UserResponse(**user)
+        tokens = self.generate_tokens(str(user["id"]))
+        return schemas.UserResponse(**user), tokens
 
     async def _revoke_tokens(self, user_id: str) -> None:
         """Revokes all active tokens for a user by recording the revocation time in Redis."""
         now_ts = int(datetime.now(timezone.utc).timestamp())
-        if redis_client:
-            await redis_client.set(f"revoked:user:{user_id}", now_ts, ex=settings.REFRESH_TOKEN_EXPIRE * 86400)
+        await self.cache.revoke_user_tokens(user_id, now_ts)
 
-    async def logout_user(self, user_id: uuid.UUID, response: Response) -> dict:
-        """Clears auth cookies on logout."""
-        response.delete_cookie(key="access_token")
-        response.delete_cookie(key="refresh_token")
+    async def logout_user(self, user_id: uuid.UUID) -> dict:
+        """Revokes tokens on logout."""
         await self._revoke_tokens(str(user_id))
         return {"message": "Successfully logged out"}
 
-    async def delete_account(self, conn: asyncpg.Connection, user_id: uuid.UUID, response: Response) -> dict:
-        deleted = await self.repo.delete_user(conn, user_id)
+    async def delete_account(self, user_id: uuid.UUID) -> dict:
+        deleted = await self.repo.delete_user(user_id)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -146,22 +125,18 @@ class AuthService:
             )
 
         # Publish UserDeletedEvent to Redis
-        if redis_client:
-            import json
-            await redis_client.publish(
-                "events:user_deleted", 
-                json.dumps({"user_id": str(user_id)})
-            )
-            # Invalidate user profile cache
-            await redis_client.delete(f"user_profile:{user_id}")
+        await self.cache.publish_user_deleted(str(user_id))
 
-        # Clear active session cookies and revoke tokens
-        await self.logout_user(user_id, response)
+        # Delete user profile cache
+        await self.cache.delete_user_profile(str(user_id))
+
+        # Revoke tokens
+        await self.logout_user(user_id)
 
         return {"message": "Account successfully deleted."}
 
-    async def request_password_reset(self, conn: asyncpg.Connection, data: schemas.ForgotPasswordRequest) -> dict:
-        user = await self.repo.get_by_email(conn, data.email)
+    async def request_password_reset(self, data: schemas.ForgotPasswordRequest) -> dict:
+        user = await self.repo.get_by_email(data.email)
         if not user:
             return {"message": "If that email is registered, a password reset link has been sent."}
 
@@ -169,7 +144,7 @@ class AuthService:
         reset_token = secrets.token_urlsafe(32)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
 
-        await self.repo.create_reset_token(conn, user["id"], reset_token, expires_at)
+        await self.repo.create_reset_token(user["id"], reset_token, expires_at)
 
         # TODO: Integrate Email Service (Resend/SMTP) here
         # E.g., await send_reset_email(user["email"], reset_token)
@@ -177,8 +152,8 @@ class AuthService:
 
         return {"message": "If that email is registered, a password reset link has been sent."}
 
-    async def reset_password(self, conn: asyncpg.Connection, data: schemas.ResetPasswordRequest) -> dict:
-        token_record = await self.repo.get_valid_reset_token(conn, data.token)
+    async def reset_password(self, data: schemas.ResetPasswordRequest) -> dict:
+        token_record = await self.repo.get_valid_reset_token(data.token)
         if not token_record:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -187,25 +162,22 @@ class AuthService:
 
         new_hashed_password = hash_password(data.new_password)
         await self.repo.update_password_and_invalidate_token(
-            conn,
             user_id=token_record["user_id"],
             new_hashed_password=new_hashed_password,
             token_id=token_record["id"],
         )
         
         await self._revoke_tokens(str(token_record["user_id"]))
-        if redis_client:
-            await redis_client.delete(f"user_profile:{token_record['user_id']}")
+        await self.cache.delete_user_profile(str(token_record["user_id"]))
 
         return {"message": "Password successfully reset. You can now log in with your new password."}
 
     async def change_password(
         self,
-        conn: asyncpg.Connection,
         user_id: uuid.UUID,
         payload: schemas.ChangePasswordRequest,
     ) -> dict:
-        current_hashed_password = await self.repo.get_password_by_id(conn, user_id)
+        current_hashed_password = await self.repo.get_password_by_id(user_id)
         if not current_hashed_password:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
@@ -218,10 +190,9 @@ class AuthService:
 
         # 2. Hash and update new password
         new_hashed = hash_password(payload.new_password)
-        await self.repo.update_password(conn, user_id, new_hashed)
+        await self.repo.update_password(user_id, new_hashed)
         
         await self._revoke_tokens(str(user_id))
-        if redis_client:
-            await redis_client.delete(f"user_profile:{user_id}")
+        await self.cache.delete_user_profile(str(user_id))
 
         return {"message": "Password updated successfully."}

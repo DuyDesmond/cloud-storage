@@ -13,64 +13,67 @@ from app.modules.files import queries
 
 AsyncConn = Union[asyncpg.Connection, PoolConnectionProxy]
 
+from fastapi import Depends
+from app.core.database import get_db_connection
+
 class FileOperationsRepository:
+    def __init__(self, conn: asyncpg.Connection = Depends(get_db_connection)):
+        self.conn = conn
     @staticmethod
     def _row_to_dict(row: asyncpg.Record | None) -> Optional[dict[str, Any]]:
         return dict(row) if row else None
 
-    async def get_storage_usage(self, conn: AsyncConn, owner_id: uuid.UUID) -> int:
-        return await conn.fetchval(queries.GET_STORAGE_USAGE, owner_id) or 0
+    async def get_storage_usage(self, owner_id: uuid.UUID) -> int:
+        return await self.conn.fetchval(queries.GET_STORAGE_USAGE, owner_id) or 0
 
-    async def get_user_storage_quota(self, conn: AsyncConn, owner_id: uuid.UUID) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(queries.GET_USER_STORAGE_QUOTA, owner_id)
+    async def get_user_storage_quota(self, owner_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        row = await self.conn.fetchrow(queries.GET_USER_STORAGE_QUOTA, owner_id)
         return self._row_to_dict(row)
 
     async def check_storage_available(
-        self, conn: AsyncConn, owner_id: uuid.UUID, requested_bytes: int
+        self, owner_id: uuid.UUID, requested_bytes: int
     ) -> bool:
-        return bool(await conn.fetchval(queries.CHECK_STORAGE_AVAILABLE, owner_id, requested_bytes))
+        return bool(await self.conn.fetchval(queries.CHECK_STORAGE_AVAILABLE, owner_id, requested_bytes))
 
-    async def get_folder_trashed_size(self, conn: AsyncConn, folder_path: str) -> int:
-        return await conn.fetchval(queries.GET_FOLDER_TRASHED_SIZE, folder_path) or 0
+    async def get_folder_trashed_size(self, folder_path: str) -> int:
+        return await self.conn.fetchval(queries.GET_FOLDER_TRASHED_SIZE, folder_path) or 0
 
-    async def recalculate_user_storage(self, conn: AsyncConn, owner_id: uuid.UUID) -> int:
-        return await conn.fetchval(queries.RECALCULATE_USER_STORAGE, owner_id) or 0
+    async def recalculate_user_storage(self, owner_id: uuid.UUID) -> int:
+        return await self.conn.fetchval(queries.RECALCULATE_USER_STORAGE, owner_id) or 0
 
-    async def get_folder_by_id(self, conn: AsyncConn, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(queries.GET_FOLDER_BY_ID, folder_id)
+    async def get_folder_by_id(self, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        row = await self.conn.fetchrow(queries.GET_FOLDER_BY_ID, folder_id)
         return self._row_to_dict(row)
 
-    async def get_file_by_id(self, conn: AsyncConn, file_id: uuid.UUID) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(queries.GET_FILE_BY_ID, file_id)
+    async def get_file_by_id(self, file_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        row = await self.conn.fetchrow(queries.GET_FILE_BY_ID, file_id)
         return self._row_to_dict(row)
 
     async def list_user_folders(
-        self, conn: AsyncConn, owner_id: uuid.UUID, parent_folder_id: uuid.UUID | None = None
+        self, owner_id: uuid.UUID, parent_folder_id: uuid.UUID | None = None
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(queries.GET_USER_FOLDERS, owner_id, parent_folder_id)
+        rows = await self.conn.fetch(queries.GET_USER_FOLDERS, owner_id, parent_folder_id)
         return [dict(r) for r in rows]
 
     async def list_user_files(
-        self, conn: AsyncConn, owner_id: uuid.UUID, parent_folder_id: uuid.UUID | None = None
+        self, owner_id: uuid.UUID, parent_folder_id: uuid.UUID | None = None
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(queries.GET_USER_FILES, owner_id, parent_folder_id)
+        rows = await self.conn.fetch(queries.GET_USER_FILES, owner_id, parent_folder_id)
         return [dict(r) for r in rows]
 
     async def create_folder(
         self,
-        conn: AsyncConn,
         owner_id: uuid.UUID,
         parent_folder_id: uuid.UUID | None,
         folder_name: str,
     ) -> dict[str, Any]:
-        row = await conn.fetchrow(queries.CREATE_FOLDER, owner_id, parent_folder_id, folder_name)
+        row = await self.conn.fetchrow(queries.CREATE_FOLDER, owner_id, parent_folder_id, folder_name)
         if not row:
             raise RuntimeError("Failed to insert folder row into database.")
         return dict(row)
 
     async def create_file(
         self,
-        conn: AsyncConn,
         file_id: uuid.UUID,
         owner_id: uuid.UUID,
         parent_folder_id: uuid.UUID | None,
@@ -80,7 +83,7 @@ class FileOperationsRepository:
         mime_type: str | None,
         content_hash: str | None,
     ) -> dict[str, Any]:
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             queries.CREATE_FILE,
             file_id,
             owner_id,
@@ -97,7 +100,6 @@ class FileOperationsRepository:
 
     async def move_folder(
         self,
-        conn: AsyncConn,
         folder_id: uuid.UUID,
         dest_parent_folder_id: uuid.UUID | None,
         *,
@@ -106,7 +108,7 @@ class FileOperationsRepository:
         file_decisions: dict[str, Any] | None = None,
     ) -> None:
         import json
-        await conn.fetchval(
+        await self.conn.fetchval(
             queries.CALL_MOVE_FOLDER,
             folder_id,
             dest_parent_folder_id,
@@ -117,53 +119,49 @@ class FileOperationsRepository:
 
     async def move_file(
         self,
-        conn: AsyncConn,
         file_id: uuid.UUID,
         dest_parent_folder_id: uuid.UUID | None,
         *,
         on_collision: str | None = "keep_duplicate",  # 'replace' | 'keep_duplicate' | None
     ) -> None:
-        await conn.fetchval(queries.CALL_MOVE_FILE, file_id, dest_parent_folder_id, on_collision)
+        await self.conn.fetchval(queries.CALL_MOVE_FILE, file_id, dest_parent_folder_id, on_collision)
 
     async def get_folder_by_parent_and_name(
         self,
-        conn: AsyncConn,
         parent_folder_id: uuid.UUID | None,
         folder_name: str,
         owner_id: uuid.UUID,
     ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             queries.GET_FOLDER_BY_PARENT_AND_NAME, parent_folder_id, folder_name, owner_id
         )
         return self._row_to_dict(row)
 
     async def get_file_by_parent_and_name(
         self,
-        conn: AsyncConn,
         parent_folder_id: uuid.UUID | None,
         file_name: str,
         owner_id: uuid.UUID,
     ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             queries.GET_FILE_BY_PARENT_AND_NAME, parent_folder_id, file_name, owner_id
         )
         return self._row_to_dict(row)
 
-    async def trash_folder(self, conn: AsyncConn, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(queries.TRASH_FOLDER, folder_id, datetime.now(timezone.utc))
+    async def trash_folder(self, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        row = await self.conn.fetchrow(queries.TRASH_FOLDER, folder_id, datetime.now(timezone.utc))
         return self._row_to_dict(row)
 
-    async def trash_file(self, conn: AsyncConn, file_id: uuid.UUID) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(queries.TRASH_FILE, file_id, datetime.now(timezone.utc))
+    async def trash_file(self, file_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        row = await self.conn.fetchrow(queries.TRASH_FILE, file_id, datetime.now(timezone.utc))
         return self._row_to_dict(row)
 
-    async def get_acl_entry(self, conn: AsyncConn, acl_entry_id: uuid.UUID) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(queries.GET_FOLDER_ACL, acl_entry_id)
+    async def get_acl_entry(self, acl_entry_id: uuid.UUID) -> Optional[dict[str, Any]]:
+        row = await self.conn.fetchrow(queries.GET_FOLDER_ACL, acl_entry_id)
         return self._row_to_dict(row)
 
     async def create_acl_entry(
         self,
-        conn: AsyncConn,
         *,
         file_id: uuid.UUID | None,
         folder_id: uuid.UUID | None,
@@ -175,7 +173,7 @@ class FileOperationsRepository:
         created_by: uuid.UUID | None,
     ) -> dict[str, Any]:
         query = queries.CREATE_ACL_ENTRY if file_id is not None else queries.CREATE_ACL_ENTRY_FOLDER
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             query,
             file_id,
             folder_id,
@@ -192,11 +190,10 @@ class FileOperationsRepository:
 
     async def update_acl_entry_permission(
         self,
-        conn: AsyncConn,
         acl_entry_id: uuid.UUID,
         permission: str,
     ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             queries.UPDATE_ACL_ENTRY_PERMISSION,
             acl_entry_id,
             permission,
@@ -205,14 +202,13 @@ class FileOperationsRepository:
 
     async def update_live_public_link(
         self,
-        conn: AsyncConn,
         acl_entry_id: uuid.UUID,
         *,
         share_token: str,
         password_hash: str | None,
         permission: str,
     ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             queries.UPDATE_LIVE_PUBLIC_LINK,
             acl_entry_id,
             share_token,
@@ -223,10 +219,9 @@ class FileOperationsRepository:
 
     async def revoke_acl_entry(
         self,
-        conn: AsyncConn,
         acl_entry_id: uuid.UUID,
     ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             queries.REVOKE_ACL_ENTRY,
             acl_entry_id,
         )
@@ -234,13 +229,12 @@ class FileOperationsRepository:
 
     async def get_live_user_share(
         self,
-        conn: AsyncConn,
         *,
         file_id: uuid.UUID | None,
         folder_id: uuid.UUID | None,
         grantee_id: uuid.UUID,
     ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             queries.GET_LIVE_USER_SHARE,
             file_id,
             folder_id,
@@ -250,12 +244,11 @@ class FileOperationsRepository:
 
     async def get_live_public_link(
         self,
-        conn: AsyncConn,
         *,
         file_id: uuid.UUID | None,
         folder_id: uuid.UUID | None,
     ) -> Optional[dict[str, Any]]:
-        row = await conn.fetchrow(
+        row = await self.conn.fetchrow(
             queries.GET_LIVE_PUBLIC_LINK,
             file_id,
             folder_id,
@@ -264,168 +257,150 @@ class FileOperationsRepository:
 
     async def list_trashed_files_before(
         self,
-        conn: AsyncConn, 
         cutoff: datetime
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(
+        rows = await self.conn.fetch(
             queries.GET_TRASHED_FILES_BEFORE, 
             cutoff)
         return [dict(r) for r in rows]
 
     async def list_trashed_folders_before(
         self, 
-        conn: AsyncConn, 
         cutoff: datetime
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(
+        rows = await self.conn.fetch(
             queries.GET_TRASHED_FOLDERS_BEFORE, 
             cutoff)
         return [dict(r) for r in rows]
 
     async def list_files_by_owner(
         self, 
-        conn: AsyncConn, 
         owner_id: uuid.UUID
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(
+        rows = await self.conn.fetch(
             queries.GET_FILES_BY_OWNER, 
             owner_id)
         return [dict(r) for r in rows]
 
     async def list_files_under_path(
         self, 
-        conn: AsyncConn, 
         path
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(
+        rows = await self.conn.fetch(
             queries.GET_FILES_UNDER_PATH, 
             path)
         return [dict(r) for r in rows]
 
     async def list_trashed_files_by_owner(
         self, 
-        conn: AsyncConn, 
         owner_id: uuid.UUID,
         parent_folder_id: uuid.UUID | None = None
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(
+        rows = await self.conn.fetch(
             queries.GET_ALL_TRASHED_FILES_BY_OWNER, 
             owner_id, parent_folder_id)
         return [dict(r) for r in rows]
 
     async def list_trashed_folders_by_owner(
         self, 
-        conn: AsyncConn, 
         owner_id: uuid.UUID,
         parent_folder_id: uuid.UUID | None = None
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(
+        rows = await self.conn.fetch(
             queries.GET_ALL_TRASHED_FOLDERS_BY_OWNER, 
             owner_id, parent_folder_id)
         return [dict(r) for r in rows]
 
     async def delete_file_by_id(
         self, 
-        conn: AsyncConn, 
         file_id: uuid.UUID
     ) -> bool:
-        result = await conn.execute(
+        result = await self.conn.execute(
             queries.DELETE_FILE_BY_ID,
             file_id)
         return result == "DELETE 1"
 
     async def delete_folder_by_id(
         self, 
-        conn: AsyncConn, 
         folder_id: uuid.UUID
     ) -> bool:
-        result = await conn.execute(
+        result = await self.conn.execute(
             queries.DELETE_FOLDER_BY_ID,
             folder_id)
         return result == "DELETE 1"
 
     async def delete_files_under_path(
         self, 
-        conn: AsyncConn, 
         path
     ) -> None:
-        await conn.execute(queries.DELETE_FILES_UNDER_PATH, path)
+        await self.conn.execute(queries.DELETE_FILES_UNDER_PATH, path)
 
     async def delete_folders_under_path(
         self, 
-        conn: AsyncConn, 
         path
     ) -> None:
-        await conn.execute(queries.DELETE_FOLDERS_UNDER_PATH, path)
+        await self.conn.execute(queries.DELETE_FOLDERS_UNDER_PATH, path)
 
     async def delete_trashed_files_by_owner(
         self, 
-        conn: AsyncConn, 
         owner_id: uuid.UUID
     ) -> None:
-        await conn.execute(queries.DELETE_TRASHED_FILES_BY_OWNER, owner_id)
+        await self.conn.execute(queries.DELETE_TRASHED_FILES_BY_OWNER, owner_id)
 
     async def delete_trashed_folders_by_owner(
         self,
-        conn: AsyncConn, 
         owner_id: uuid.UUID
     ) -> None:
-        await conn.execute(queries.DELETE_TRASHED_FOLDERS_BY_OWNER, owner_id)
+        await self.conn.execute(queries.DELETE_TRASHED_FOLDERS_BY_OWNER, owner_id)
 
-    async def delete_all_user_data(self, conn: AsyncConn, owner_id: uuid.UUID) -> None:
-        async with conn.transaction():
-            await conn.execute("DELETE FROM storage.acl_entries WHERE grantee_id = $1", owner_id)
-            await conn.execute("DELETE FROM storage.files WHERE owner_id = $1", owner_id)
-            await conn.execute("DELETE FROM storage.folders WHERE owner_id = $1", owner_id)
+    async def delete_all_user_data(self, owner_id: uuid.UUID) -> None:
+        async with self.conn.transaction():
+            await self.conn.execute("DELETE FROM storage.acl_entries WHERE grantee_id = $1", owner_id)
+            await self.conn.execute("DELETE FROM storage.files WHERE owner_id = $1", owner_id)
+            await self.conn.execute("DELETE FROM storage.folders WHERE owner_id = $1", owner_id)
 
     async def get_path_for_file(
         self, 
-        conn: AsyncConn, 
         file_id: uuid.UUID
     ) -> str | None:
-        return await conn.fetchval(queries.GET_PATH_FOR_FILE, file_id)
+        return await self.conn.fetchval(queries.GET_PATH_FOR_FILE, file_id)
 
     async def get_path_for_folder(
         self,
-        conn: AsyncConn, 
         folder_id: uuid.UUID
     ) -> str | None:
-        return await conn.fetchval(queries.GET_PATH_FOR_FOLDER, folder_id)
+        return await self.conn.fetchval(queries.GET_PATH_FOR_FOLDER, folder_id)
 
     async def get_owner_and_trashed_for_file(
         self, 
-        conn: AsyncConn, 
         file_id: uuid.UUID
     ) -> asyncpg.Record | None:
-        return await conn.fetchrow(queries.GET_OWNER_AND_TRASHED_FOR_FILE, file_id)
+        return await self.conn.fetchrow(queries.GET_OWNER_AND_TRASHED_FOR_FILE, file_id)
 
     async def get_owner_and_trashed_for_folder(
         self, 
-        conn: AsyncConn, 
         folder_id: uuid.UUID
     ) -> asyncpg.Record | None:
-        return await conn.fetchrow(queries.GET_OWNER_AND_TRASHED_FOR_FOLDER, folder_id)
+        return await self.conn.fetchrow(queries.GET_OWNER_AND_TRASHED_FOR_FOLDER, folder_id)
 
     async def get_effective_acl(
         self, 
-        conn: AsyncConn, 
         path: str, 
         is_file: bool, 
         target_id: uuid.UUID, 
         user_id: uuid.UUID
     ) -> dict | None:
-        row = await conn.fetchrow(queries.GET_EFFECTIVE_ACL, path, is_file, target_id, user_id)
+        row = await self.conn.fetchrow(queries.GET_EFFECTIVE_ACL, path, is_file, target_id, user_id)
         return dict(row) if row else None
 
     async def file_exists_by_name(
         self,
-        conn: asyncpg.Connection,
         parent_folder_id: uuid.UUID | None,
         owner_id: uuid.UUID,
         file_name: str,
         exclude_id: uuid.UUID | None = None,
     ) -> bool:
-        result = await conn.fetchval(
+        result = await self.conn.fetchval(
             queries.NAME_EXISTS,
             True,  # p_is_file
             parent_folder_id,
@@ -437,13 +412,12 @@ class FileOperationsRepository:
 
     async def folder_exists_by_name(
         self,
-        conn: asyncpg.Connection,
         parent_folder_id: uuid.UUID | None,
         owner_id: uuid.UUID,
         folder_name: str,
         exclude_id: uuid.UUID | None = None,
     ) -> bool:
-        result = await conn.fetchval(
+        result = await self.conn.fetchval(
             queries.NAME_EXISTS,
             False,  # p_is_file = False checks storage.folders
             parent_folder_id,
@@ -455,76 +429,67 @@ class FileOperationsRepository:
 
     async def call_lock_naming_scope(
         self,
-        conn: AsyncConn, 
         parent_folder_id: uuid.UUID | None, 
         owner_id: uuid.UUID
     ) -> None:
-        await conn.fetchval(queries.CALL_LOCK_NAMING_SCOPE, parent_folder_id, owner_id)
+        await self.conn.fetchval(queries.CALL_LOCK_NAMING_SCOPE, parent_folder_id, owner_id)
 
     async def resolve_file_name_collision(
         self, 
-        conn: asyncpg.Connection, 
         parent_folder_id: uuid.UUID | None, 
         owner_id: uuid.UUID, file_name: str
     ) -> str | None:
-        return await conn.fetchval(queries.RESOLVE_FILE_NAME_COLLISION, parent_folder_id, owner_id, file_name)
+        return await self.conn.fetchval(queries.RESOLVE_FILE_NAME_COLLISION, parent_folder_id, owner_id, file_name)
 
     async def resolve_restored_file_name(
         self, 
-        conn: AsyncConn, 
         parent_folder_id: uuid.UUID | None, 
         owner_id: uuid.UUID, 
         file_name: str
     ) -> str | None:
-        return await conn.fetchval(queries.RESOLVE_RESTORED_FILE_NAME, parent_folder_id, owner_id, file_name)
+        return await self.conn.fetchval(queries.RESOLVE_RESTORED_FILE_NAME, parent_folder_id, owner_id, file_name)
 
     async def resolve_restored_folder_name(
         self, 
-        conn: AsyncConn, 
         parent_folder_id: uuid.UUID | None, 
         owner_id: uuid.UUID, 
         folder_name: str
     ) -> str | None:
-        return await conn.fetchval(queries.RESOLVE_RESTORED_FOLDER_NAME, parent_folder_id, owner_id, folder_name)
+        return await self.conn.fetchval(queries.RESOLVE_RESTORED_FOLDER_NAME, parent_folder_id, owner_id, folder_name)
 
     async def restore_file(
         self, 
-        conn: AsyncConn, 
         file_id: uuid.UUID, 
         new_file_name: str
     ) -> dict[str, Any] | None:
-        row = await conn.fetchrow(queries.RESTORE_FILE, file_id, new_file_name)
+        row = await self.conn.fetchrow(queries.RESTORE_FILE, file_id, new_file_name)
         return dict(row) if row else None
 
     async def restore_folder(
         self, 
-        conn: AsyncConn, 
         folder_id: uuid.UUID, 
         new_folder_name: str
     ) -> dict[str, Any] | None:
-        row = await conn.fetchrow(queries.RESTORE_FOLDER, folder_id, new_folder_name)
+        row = await self.conn.fetchrow(queries.RESTORE_FOLDER, folder_id, new_folder_name)
         return dict(row) if row else None
 
     async def list_shared_with_me_folders(
         self,
-        conn: AsyncConn,
         user_id: uuid.UUID
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(queries.GET_SHARED_WITH_ME_FOLDERS, user_id)
+        rows = await self.conn.fetch(queries.GET_SHARED_WITH_ME_FOLDERS, user_id)
         return [dict(r) for r in rows]
 
     async def list_shared_with_me_files(
         self, 
-        conn: AsyncConn, 
         user_id: uuid.UUID
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(queries.GET_SHARED_WITH_ME_FILES, user_id)
+        rows = await self.conn.fetch(queries.GET_SHARED_WITH_ME_FILES, user_id)
         return [dict(r) for r in rows]
 
     async def get_folders_by_ids(
         self, 
-        conn: AsyncConn, 
         folder_ids: list[uuid.UUID]
     ) -> list[dict[str, Any]]:
-        rows = await conn.fetch(queries.GET_FOLDERS_BY_IDS, folder_ids)
+        rows = await self.conn.fetch(queries.GET_FOLDERS_BY_IDS, folder_ids)
         return [dict(r) for r in rows]

@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 import asyncpg
-import boto3
+import aioboto3
+from contextlib import asynccontextmanager
 from botocore.exceptions import ClientError
-from boto3.s3.transfer import TransferConfig
 from fastapi import Depends, HTTPException, UploadFile, status, Request, Header
 from fastapi.responses import StreamingResponse
 
@@ -31,284 +31,125 @@ class R2StorageGateway:
         self.access_key = getattr(settings, "R2_ACCESS_KEY_ID", None)
         self.secret_key = getattr(settings, "R2_SECRET_ACCESS_KEY", None)
         self.bucket_name = getattr(settings, "R2_BUCKET_NAME", None)
-        self._client: Any | None = None
-        self.config = TransferConfig(
-            multipart_threshold=8 * 1024 * 1024,  # 8 MB: threshold to trigger multipart
-            multipart_chunksize=16 * 1024 * 1024, # 16 MB: size of each uploaded chunk
-            max_concurrency=10,                    # Number of simultaneous threads
-            use_threads=False
-        )
+        self.session = aioboto3.Session()
 
-    def _get_client(self) -> Any:
+    @asynccontextmanager
+    async def _get_client(self):
         if not self.endpoint_url or not self.access_key or not self.secret_key:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Cloudflare R2 storage is not configured.",
             )
+        async with self.session.client(
+            service_name="s3",
+            endpoint_url=self.endpoint_url,
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+            region_name="auto",
+        ) as client:
+            yield client
 
-        if self._client is None:
-            self._client = boto3.client(
-                service_name="s3",
-                endpoint_url=self.endpoint_url,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
-                region_name="auto",
-            )
-
-        return self._client
-
-    async def upload_bytes(
-        self,
-        *,
-        object_name: str,
-        data: bytes,
-        content_type: str | None,
-    ) -> None:
-        client = self._get_client()
+    async def upload_bytes(self, *, object_name: str, data: bytes, content_type: str | None) -> None:
         stream = io.BytesIO(data)
-        
         extra_args: dict[str, str] = {}
-        if content_type:
-            extra_args["ContentType"] = content_type
-
+        if content_type: extra_args["ContentType"] = content_type
         try:
-            await asyncio.to_thread(
-                client.upload_fileobj,
-                Fileobj=stream,
-                Bucket=self.bucket_name,
-                Key=object_name,
-                ExtraArgs=extra_args if extra_args else None,
-            )
+            async with self._get_client() as client:
+                await client.upload_fileobj(
+                    stream,
+                    self.bucket_name,
+                    object_name,
+                    ExtraArgs=extra_args if extra_args else None,
+                )
         except ClientError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to upload file to Cloudflare R2.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Failed to upload file to Cloudflare R2.") from exc
 
     async def delete_object(self, object_name: str) -> None:
-        """Deletes an object from the S3 bucket with 5 retries."""
-        if not self.endpoint_url or not self.access_key or not self.secret_key:
-            return
-        
-        client = self._get_client()
-        
+        if not self.endpoint_url or not self.access_key or not self.secret_key: return
         max_retries = 5
         for attempt in range(max_retries):
             try:
-                await asyncio.to_thread(
-                    client.delete_object,
-                    Bucket=self.bucket_name,
-                    Key=object_name,
-                )
-                return  # Success
+                async with self._get_client() as client:
+                    await client.delete_object(Bucket=self.bucket_name, Key=object_name)
+                return
             except Exception as e:
                 if attempt == max_retries - 1:
-                    logger.error(f"Failed to delete object {object_name} after {max_retries} attempts: {e}")
-                    raise HTTPException(status_code=500, detail="Failed to delete file from storage. Please try again.")
-                await asyncio.sleep(1) # wait 1s before retry
+                    logger.error(f"Failed to delete object {object_name}: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to delete file from storage.")
+                await asyncio.sleep(1)
 
-    async def generate_presigned_put_url(
-        self,
-        *,
-        object_name: str,
-        expires_in: int = 3600,
-        content_type: str | None = None,
-        metadata: dict[str, str] | None = None,
-    ) -> str:
-        """Generate a presigned URL for PUT uploads (client performs HTTP PUT).
-
-        Returns a URL string that the client can use to PUT the object directly
-        to R2/MinIO.
-        """
-        client = self._get_client()
+    async def generate_presigned_put_url(self, *, object_name: str, expires_in: int = 3600, content_type: str | None = None, metadata: dict[str, str] | None = None) -> str:
         params: dict[str, object] = {"Bucket": self.bucket_name, "Key": object_name}
-        if content_type:
-            params["ContentType"] = content_type
-        if metadata:
-            params["Metadata"] = metadata
-
+        if content_type: params["ContentType"] = content_type
+        if metadata: params["Metadata"] = metadata
         try:
-            url = await asyncio.to_thread(
-                client.generate_presigned_url,
-                ClientMethod="put_object",
-                Params=params,
-                ExpiresIn=expires_in,
-            )
-            return url
+            async with self._get_client() as client:
+                return await client.generate_presigned_url(ClientMethod="put_object", Params=params, ExpiresIn=expires_in)
         except ClientError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to generate presigned upload URL.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Failed to generate presigned upload URL.") from exc
 
     async def generate_presigned_get_url(self, *, object_name: str, expires_in: int = 3600) -> str:
-        """Generate a presigned URL for downloading an object (GET).
-
-        Returns a URL string that the client can use to GET the object directly
-        from R2/MinIO.
-        """
-        client = self._get_client()
         params = {"Bucket": self.bucket_name, "Key": object_name}
         try:
-            url = await asyncio.to_thread(
-                client.generate_presigned_url,
-                ClientMethod="get_object",
-                Params=params,
-                ExpiresIn=expires_in,
-            )
-            return url
+            async with self._get_client() as client:
+                return await client.generate_presigned_url(ClientMethod="get_object", Params=params, ExpiresIn=expires_in)
         except ClientError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to generate presigned download URL.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Failed to generate presigned download URL.") from exc
 
-    async def generate_presigned_post(
-        self,
-        *,
-        object_name: str,
-        expires_in: int = 3600,
-        content_type: str | None = None,
-        max_file_size: int | None = None,
-    ) -> dict[str, object]:
-        """Generate a presigned POST for browser-style multipart/form uploads.
-
-        Returns the dict returned by boto3's `generate_presigned_post` (url + fields).
-        """
-        client = self._get_client()
+    async def generate_presigned_post(self, *, object_name: str, expires_in: int = 3600, content_type: str | None = None, max_file_size: int | None = None) -> dict[str, object]:
         fields: dict[str, str] = {"key": object_name}
         conditions: list[object] = []
         if content_type:
-            # enforce content type in a condition
             conditions.append(["eq", "$Content-Type", content_type])
             fields["Content-Type"] = content_type
         if max_file_size is not None:
             conditions.append(["content-length-range", 0, max_file_size])
-
         try:
-            result = await asyncio.to_thread(
-                client.generate_presigned_post,
-                Bucket=self.bucket_name,
-                Key=object_name,
-                Fields=fields if fields else None,
-                Conditions=conditions if conditions else None,
-                ExpiresIn=expires_in,
-            )
-            return result
+            async with self._get_client() as client:
+                return await client.generate_presigned_post(Bucket=self.bucket_name, Key=object_name, Fields=fields if fields else None, Conditions=conditions if conditions else None, ExpiresIn=expires_in)
         except ClientError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to generate presigned POST.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Failed to generate presigned POST.") from exc
 
     async def head_object(self, object_name: str) -> dict[str, Any] | None:
-        client = self._get_client()
         try:
-            res = await asyncio.to_thread(
-                client.head_object,
-                Bucket=self.bucket_name,
-                Key=object_name,
-            )
-            return res
+            async with self._get_client() as client:
+                return await client.head_object(Bucket=self.bucket_name, Key=object_name)
         except ClientError as exc:
-            error_code = str(exc.response.get("Error", {}).get("Code", ""))
-            if error_code in ("404", "NoSuchKey", "NotFound"):
+            if str(exc.response.get("Error", {}).get("Code", "")) in ("404", "NoSuchKey", "NotFound"):
                 return None
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to verify storage object.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Failed to verify storage object.") from exc
 
-    async def create_multipart_upload(
-        self,
-        *,
-        object_name: str,
-        content_type: str | None = None,
-    ) -> str:
-        client = self._get_client()
+    async def create_multipart_upload(self, *, object_name: str, content_type: str | None = None) -> str:
         kwargs: dict[str, Any] = {"Bucket": self.bucket_name, "Key": object_name}
-        if content_type:
-            kwargs["ContentType"] = content_type
+        if content_type: kwargs["ContentType"] = content_type
         try:
-            res = await asyncio.to_thread(
-                client.create_multipart_upload,
-                **kwargs,
-            )
-            return res["UploadId"]
+            async with self._get_client() as client:
+                res = await client.create_multipart_upload(**kwargs)
+                return res["UploadId"]
         except ClientError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to initiate multipart upload in storage.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Failed to initiate multipart upload.") from exc
 
-    async def generate_presigned_part_url(
-        self,
-        *,
-        object_name: str,
-        upload_id: str,
-        part_number: int,
-        expires_in: int = 600,
-    ) -> str:
-        client = self._get_client()
-        params = {
-            "Bucket": self.bucket_name,
-            "Key": object_name,
-            "UploadId": upload_id,
-            "PartNumber": part_number,
-        }
+    async def generate_presigned_part_url(self, *, object_name: str, upload_id: str, part_number: int, expires_in: int = 600) -> str:
+        params = {"Bucket": self.bucket_name, "Key": object_name, "UploadId": upload_id, "PartNumber": part_number}
         try:
-            url = await asyncio.to_thread(
-                client.generate_presigned_url,
-                ClientMethod="upload_part",
-                Params=params,
-                ExpiresIn=expires_in,
-            )
-            return url
+            async with self._get_client() as client:
+                return await client.generate_presigned_url(ClientMethod="upload_part", Params=params, ExpiresIn=expires_in)
         except ClientError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to generate presigned URL for upload part.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Failed to generate URL for upload part.") from exc
 
-    async def complete_multipart_upload(
-        self,
-        *,
-        object_name: str,
-        upload_id: str,
-        parts: list[dict[str, Any]],
-    ) -> None:
-        client = self._get_client()
+    async def complete_multipart_upload(self, *, object_name: str, upload_id: str, parts: list[dict[str, Any]]) -> None:
         try:
-            await asyncio.to_thread(
-                client.complete_multipart_upload,
-                Bucket=self.bucket_name,
-                Key=object_name,
-                UploadId=upload_id,
-                MultipartUpload={"Parts": parts},
-            )
+            async with self._get_client() as client:
+                await client.complete_multipart_upload(Bucket=self.bucket_name, Key=object_name, UploadId=upload_id, MultipartUpload={"Parts": parts})
         except ClientError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to complete multipart upload in storage.",
-            ) from exc
+            raise HTTPException(status_code=503, detail="Failed to complete multipart upload.") from exc
 
-    async def abort_multipart_upload(
-        self,
-        *,
-        object_name: str,
-        upload_id: str,
-    ) -> None:
-        client = self._get_client()
+    async def abort_multipart_upload(self, *, object_name: str, upload_id: str) -> None:
         try:
-            await asyncio.to_thread(
-                client.abort_multipart_upload,
-                Bucket=self.bucket_name,
-                Key=object_name,
-                UploadId=upload_id,
-            )
+            async with self._get_client() as client:
+                await client.abort_multipart_upload(Bucket=self.bucket_name, Key=object_name, UploadId=upload_id)
         except ClientError:
             pass
-
 
 
 def sanitize_filename(filename: str) -> str:
@@ -346,12 +187,15 @@ class _HashingReader:
 
 
 class FileOperationsService:
-    async def _handle_restored_name_collision(self, conn, parent_id, owner_id, original_name, is_file: bool):
-        await self.repo.call_lock_naming_scope(conn, parent_id, owner_id)
+    def __init__(self, repo: FileOperationsRepository = Depends(FileOperationsRepository), storage: R2StorageGateway = Depends(R2StorageGateway)):
+        self.repo = repo
+        self.storage = storage
+    async def _handle_restored_name_collision(self, parent_id, owner_id, original_name, is_file: bool):
+        await self.repo.call_lock_naming_scope(parent_id, owner_id)
         if is_file:
-            new_name = await self.repo.resolve_restored_file_name(conn, parent_id, owner_id, original_name)
+            new_name = await self.repo.resolve_restored_file_name(parent_id, owner_id, original_name)
         else:
-            new_name = await self.repo.resolve_restored_folder_name(conn, parent_id, owner_id, original_name)
+            new_name = await self.repo.resolve_restored_folder_name(parent_id, owner_id, original_name)
             
         if new_name is None:
             raise HTTPException(
@@ -360,21 +204,21 @@ class FileOperationsService:
             )
         return new_name
 
-    async def _handle_filename_collision(self, conn, parent_folder_id, current_user_id, clean_name, on_collision):
+    async def _handle_filename_collision(self, parent_folder_id, current_user_id, clean_name, on_collision):
         if on_collision == "keep_duplicate":
             return await self.repo.resolve_file_name_collision(
-                conn, parent_folder_id, current_user_id, clean_name
+                parent_folder_id, current_user_id, clean_name
             )
         elif on_collision == "replace":
             existing = await self.repo.get_file_by_parent_and_name(
-                conn, parent_folder_id, clean_name, current_user_id
+                parent_folder_id, clean_name, current_user_id
             )
             if existing:
-                await self.repo.trash_file(conn, existing["id"])
+                await self.repo.trash_file(existing["id"])
             return clean_name
         return clean_name
 
-    async def _check_storage_available(self, conn, owner_id, size: int) -> bool:
+    async def _check_storage_available(self, owner_id, size: int) -> bool:
         import httpx
         from app.core.config import settings
         async with httpx.AsyncClient() as client:
@@ -382,18 +226,18 @@ class FileOperationsService:
             resp.raise_for_status()
             quota = resp.json()["storage_quota"]
         
-        usage = await self.repo.get_storage_usage(conn, owner_id)
+        usage = await self.repo.get_storage_usage(owner_id)
         if quota is None: return True
         return (usage + size) <= quota
 
-    async def _recalculate_user_storage(self, conn, owner_id) -> None:
+    async def _recalculate_user_storage(self, owner_id) -> None:
         import httpx
         from app.core.config import settings
-        usage = await self.repo.get_storage_usage(conn, owner_id)
+        usage = await self.repo.get_storage_usage(owner_id)
         async with httpx.AsyncClient() as client:
             await client.put(f"{settings.AUTH_SERVICE_URL}/internal/users/{owner_id}/storage", json={"storage_used": usage})
 
-    async def _get_user_storage_quota(self, conn, owner_id) -> dict:
+    async def _get_user_storage_quota(self, owner_id) -> dict:
         import httpx
         from app.core.config import settings
         async with httpx.AsyncClient() as client:
@@ -413,13 +257,12 @@ class FileOperationsService:
 
     async def request_presigned_upload(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         payload: schemas.PresignedUploadRequest,
     ) -> schemas.PresignedUploadResponse:
-        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        await self._require_parent_access(payload.parent_folder_id, current_user["id"])
         if payload.size_bytes > 0:
-            has_space = await self._check_storage_available(conn, current_user["id"], payload.size_bytes)
+            has_space = await self._check_storage_available(current_user["id"], payload.size_bytes)
             if not has_space:
                 raise HTTPException(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -457,11 +300,10 @@ class FileOperationsService:
 
     async def complete_direct_upload(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         payload: schemas.CompleteUploadRequest,
     ) -> schemas.FileResponse:
-        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        await self._require_parent_access(payload.parent_folder_id, current_user["id"])
 
         user_prefix = f"storage/{current_user['id']}/"
         if not payload.storage_key.startswith(user_prefix):
@@ -482,7 +324,7 @@ class FileOperationsService:
         if head and "ContentLength" in head and head["ContentLength"] > 0:
             actual_size = head["ContentLength"]
 
-        has_space = await self._check_storage_available(conn, current_user["id"], actual_size)
+        has_space = await self._check_storage_available(current_user["id"], actual_size)
         if not has_space:
             await self.storage.delete_object(payload.storage_key)
             raise HTTPException(
@@ -511,17 +353,15 @@ class FileOperationsService:
         clean_name = sanitize_filename(payload.file_name)
 
         async def _do_create():
-            await self.repo.call_lock_naming_scope(conn, payload.parent_folder_id, current_user["id"])
+            await self.repo.call_lock_naming_scope(payload.parent_folder_id, current_user["id"])
 
             final_name = clean_name
             if await self.repo.file_exists_by_name(
-                conn,
                 payload.parent_folder_id,
                 current_user["id"],
                 clean_name,
             ):
                 final_name = await self.repo.resolve_file_name_collision(
-                    conn,
                     payload.parent_folder_id,
                     current_user["id"],
                     clean_name,
@@ -529,7 +369,6 @@ class FileOperationsService:
 
             file_id = uuid.uuid4()
             row = await self.repo.create_file(
-                conn,
                 file_id=file_id,
                 owner_id=current_user["id"],
                 parent_folder_id=payload.parent_folder_id,
@@ -542,18 +381,17 @@ class FileOperationsService:
             return row
 
         row = await self._with_db_retry(_do_create)
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return self._as_file_response(row)
 
     async def initiate_multipart_upload(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         payload: schemas.InitiateMultipartUploadRequest,
     ) -> schemas.InitiateMultipartUploadResponse:
-        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        await self._require_parent_access(payload.parent_folder_id, current_user["id"])
         if payload.size_bytes > 0:
-            has_space = await self._check_storage_available(conn, current_user["id"], payload.size_bytes)
+            has_space = await self._check_storage_available(current_user["id"], payload.size_bytes)
             if not has_space:
                 raise HTTPException(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -600,11 +438,10 @@ class FileOperationsService:
 
     async def complete_multipart_upload(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         payload: schemas.CompleteMultipartUploadRequest,
     ) -> schemas.FileResponse:
-        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        await self._require_parent_access(payload.parent_folder_id, current_user["id"])
         user_prefix = f"storage/{current_user['id']}/"
         if not payload.storage_key.startswith(user_prefix):
             raise HTTPException(
@@ -613,7 +450,7 @@ class FileOperationsService:
             )
 
         if payload.size_bytes > 0:
-            has_space = await self._check_storage_available(conn, current_user["id"], payload.size_bytes)
+            has_space = await self._check_storage_available(current_user["id"], payload.size_bytes)
             if not has_space:
                 await self.storage.abort_multipart_upload(
                     object_name=payload.storage_key,
@@ -641,17 +478,15 @@ class FileOperationsService:
         clean_name = sanitize_filename(payload.file_name)
 
         async def _do_create():
-            await self.repo.call_lock_naming_scope(conn, payload.parent_folder_id, current_user["id"])
+            await self.repo.call_lock_naming_scope(payload.parent_folder_id, current_user["id"])
 
             final_name = clean_name
             if await self.repo.file_exists_by_name(
-                conn,
                 payload.parent_folder_id,
                 current_user["id"],
                 clean_name,
             ):
                 final_name = await self.repo.resolve_file_name_collision(
-                    conn,
                     payload.parent_folder_id,
                     current_user["id"],
                     clean_name,
@@ -659,7 +494,6 @@ class FileOperationsService:
 
             file_id = uuid.uuid4()
             row = await self.repo.create_file(
-                conn,
                 file_id=file_id,
                 owner_id=current_user["id"],
                 parent_folder_id=payload.parent_folder_id,
@@ -672,7 +506,7 @@ class FileOperationsService:
             return row
 
         row = await self._with_db_retry(_do_create)
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return self._as_file_response(row)
 
     async def abort_multipart_upload(
@@ -730,17 +564,16 @@ class FileOperationsService:
 
     async def _require_edit_access(
         self,
-        conn: asyncpg.Connection,
         *,
         target_type: Literal["file", "folder"],
         target_id: uuid.UUID,
         current_user_id: uuid.UUID,
     ) -> None:
         is_file = target_type == "file"
-        path = await (self.repo.get_path_for_file(conn, target_id) if is_file else self.repo.get_path_for_folder(conn, target_id))
+        path = await (self.repo.get_path_for_file(target_id) if is_file else self.repo.get_path_for_folder(target_id))
         if not path:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
-        owner_row = await (self.repo.get_owner_and_trashed_for_file(conn, target_id) if is_file else self.repo.get_owner_and_trashed_for_folder(conn, target_id))
+        owner_row = await (self.repo.get_owner_and_trashed_for_file(target_id) if is_file else self.repo.get_owner_and_trashed_for_folder(target_id))
         if not owner_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
 
@@ -749,7 +582,7 @@ class FileOperationsService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target is trashed.")
             return
 
-        acl = await self.repo.get_effective_acl(conn, path, is_file, target_id, current_user_id)
+        acl = await self.repo.get_effective_acl(path, is_file, target_id, current_user_id)
         if not acl or not acl.get("permission"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
             
@@ -768,14 +601,12 @@ class FileOperationsService:
 
     async def _require_parent_access(
         self,
-        conn: asyncpg.Connection,
         parent_folder_id: uuid.UUID | None,
         current_user_id: uuid.UUID,
     ) -> None:
         if parent_folder_id is None:
             return
         await self._require_edit_access(
-            conn,
             target_type="folder",
             target_id=parent_folder_id,
             current_user_id=current_user_id,
@@ -783,17 +614,16 @@ class FileOperationsService:
 
     async def create_folder(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         payload: schemas.FolderCreateRequest,
     ) -> schemas.FolderResponse:
-        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        await self._require_parent_access(payload.parent_folder_id, current_user["id"])
 
         clean_name = sanitize_filename(payload.folder_name or "New Folder")
         on_col = getattr(payload, "on_collision", None)
 
         if on_col is None:
-            collision = await self.repo.folder_exists_by_name(conn, payload.parent_folder_id, current_user["id"], clean_name)
+            collision = await self.repo.folder_exists_by_name(payload.parent_folder_id, current_user["id"], clean_name)
             if collision:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, 
@@ -801,27 +631,26 @@ class FileOperationsService:
                 )
 
         async def _perform_operation():
-            async with conn.transaction():
-                await self.repo.call_lock_naming_scope(conn, payload.parent_folder_id, current_user["id"])
+            async with self.repo.conn.transaction():
+                await self.repo.call_lock_naming_scope(payload.parent_folder_id, current_user["id"])
                 
                 final_name = clean_name
                 if on_col == "keep_duplicate":
                     counter = 1
-                    while await self.repo.folder_exists_by_name(conn, payload.parent_folder_id, current_user["id"], final_name):
+                    while await self.repo.folder_exists_by_name(payload.parent_folder_id, current_user["id"], final_name):
                         final_name = f"{clean_name} ({counter})"
                         counter += 1
                 elif on_col in ("replace", "merge"):
                     existing = await self.repo.get_folder_by_parent_and_name(
-                        conn, payload.parent_folder_id, clean_name, current_user["id"]
+                        payload.parent_folder_id, clean_name, current_user["id"]
                     )
                     if existing:
                         if on_col == "merge":
                             return existing
                         else:  # replace
-                            await self.repo.trash_folder(conn, existing["id"])
+                            await self.repo.trash_folder(existing["id"])
 
                 return await self.repo.create_folder(
-                    conn,
                     current_user["id"],
                     payload.parent_folder_id,
                     final_name,
@@ -836,18 +665,17 @@ class FileOperationsService:
 
     async def upload_file(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         parent_folder_id: uuid.UUID | None,
         upload_file: UploadFile,
         on_collision: Literal["replace", "keep_duplicate"] | None = "keep_duplicate",
     ) -> schemas.FileResponse:
-        await self._require_parent_access(conn, parent_folder_id, current_user["id"])
+        await self._require_parent_access(parent_folder_id, current_user["id"])
 
         clean_name = sanitize_filename(upload_file.filename or "untitled")
 
         if on_collision is None:
-            collision = await self.repo.file_exists_by_name(conn, parent_folder_id, current_user["id"], clean_name)
+            collision = await self.repo.file_exists_by_name(parent_folder_id, current_user["id"], clean_name)
             if collision:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -888,7 +716,7 @@ class FileOperationsService:
 
         content_hash = reader.hexdigest() if reader.size > 0 else None
 
-        has_space = await self._check_storage_available(conn, current_user["id"], reader.size)
+        has_space = await self._check_storage_available(current_user["id"], reader.size)
         if not has_space:
             await self.storage.delete_object(storage_key)
             raise HTTPException(
@@ -897,13 +725,12 @@ class FileOperationsService:
             )
 
         async def _perform_operation():
-            async with conn.transaction():
-                await self.repo.call_lock_naming_scope(conn, parent_folder_id, current_user["id"])
+            async with self.repo.conn.transaction():
+                await self.repo.call_lock_naming_scope(parent_folder_id, current_user["id"])
 
-                final_name = await self._handle_filename_collision(conn, parent_folder_id, current_user["id"], clean_name, on_collision)
+                final_name = await self._handle_filename_collision(parent_folder_id, current_user["id"], clean_name, on_collision)
 
                 return await self.repo.create_file(
-                    conn,
                     file_id,
                     current_user["id"],
                     parent_folder_id,
@@ -933,22 +760,21 @@ class FileOperationsService:
             await self.storage.delete_object(storage_key)
             raise
 
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return self._as_file_response(row)
 
     async def move_folder(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         folder_id: uuid.UUID,
         payload: schemas.FolderMoveRequest,
     ) -> schemas.FolderResponse:
-        folder = await self.repo.get_folder_by_id(conn, folder_id)
+        folder = await self.repo.get_folder_by_id(folder_id)
         if not folder:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
         self._require_owner(folder, current_user["id"])
         self._require_target_live(folder)
-        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        await self._require_parent_access(payload.parent_folder_id, current_user["id"])
 
         if payload.parent_folder_id == folder_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Folder cannot be moved into itself.")
@@ -956,19 +782,18 @@ class FileOperationsService:
         folder_name = folder["folder_name"]
 
         async def _perform_operation():
-            async with conn.transaction():
+            async with self.repo.conn.transaction():
                 await self.repo.move_folder(
-                    conn,
                     folder_id,
                     payload.parent_folder_id,
                     on_collision=payload.on_collision,
                     file_mode=payload.file_mode,
                     file_decisions=payload.file_decisions,
                 )
-                row = await self.repo.get_folder_by_id(conn, folder_id)
+                row = await self.repo.get_folder_by_id(folder_id)
                 if row is None:
                     row = await self.repo.get_folder_by_parent_and_name(
-                        conn, payload.parent_folder_id, folder_name, current_user["id"]
+                        payload.parent_folder_id, folder_name, current_user["id"]
                     )
                 return row
 
@@ -991,24 +816,23 @@ class FileOperationsService:
 
     async def move_file(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         file_id: uuid.UUID,
         payload: schemas.FileMoveRequest,
     ) -> schemas.FileResponse:
-        file_row = await self.repo.get_file_by_id(conn, file_id)
+        file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
         self._require_owner(file_row, current_user["id"])
         self._require_target_live(file_row)
-        await self._require_parent_access(conn, payload.parent_folder_id, current_user["id"])
+        await self._require_parent_access(payload.parent_folder_id, current_user["id"])
 
         async def _perform_operation():
-            async with conn.transaction():
+            async with self.repo.conn.transaction():
                 await self.repo.move_file(
-                    conn, file_id, payload.parent_folder_id, on_collision=payload.on_collision
+                    file_id, payload.parent_folder_id, on_collision=payload.on_collision
                 )
-                return await self.repo.get_file_by_id(conn, file_id)
+                return await self.repo.get_file_by_id(file_id)
 
         try:
             row = await self._with_db_retry(_perform_operation)
@@ -1027,30 +851,28 @@ class FileOperationsService:
 
     async def delete_folder(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         folder_id: uuid.UUID,
     ) -> schemas.MessageResponse:
-        folder = await self.repo.get_folder_by_id(conn, folder_id)
+        folder = await self.repo.get_folder_by_id(folder_id)
         if not folder:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
         self._require_owner(folder, current_user["id"])
         if folder["is_trashed"]:
             return schemas.MessageResponse(message="Folder already in trash.")
 
-        row = await self.repo.trash_folder(conn, folder_id)
+        row = await self.repo.trash_folder(folder_id)
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return schemas.MessageResponse(message="Folder moved to trash.")
 
     async def restore_folder(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         folder_id: uuid.UUID,
     ) -> schemas.FolderResponse:
-        folder = await self.repo.get_folder_by_id(conn, folder_id)
+        folder = await self.repo.get_folder_by_id(folder_id)
         if not folder:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
         self._require_owner(folder, current_user["id"])
@@ -1075,9 +897,9 @@ class FileOperationsService:
             )
 
         if folder_path:
-            trashed_size = await self.repo.get_folder_trashed_size(conn, folder_path)
+            trashed_size = await self.repo.get_folder_trashed_size(folder_path)
             if trashed_size > 0:
-                has_space = await self._check_storage_available(conn, current_user["id"], trashed_size)
+                has_space = await self._check_storage_available(current_user["id"], trashed_size)
                 if not has_space:
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -1085,9 +907,9 @@ class FileOperationsService:
                     )
 
         async def _perform_operation():
-            async with conn.transaction():
-                new_name = await self._handle_restored_name_collision(conn, parent_id, owner_id, folder_name, is_file=False)
-                return await self.repo.restore_folder(conn, folder_id, new_name)
+            async with self.repo.conn.transaction():
+                new_name = await self._handle_restored_name_collision(parent_id, owner_id, folder_name, is_file=False)
+                return await self.repo.restore_folder(folder_id, new_name)
 
         try:
             restored = await self._with_db_retry(_perform_operation)
@@ -1099,35 +921,33 @@ class FileOperationsService:
         if not restored:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to restore folder.")
 
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return self._as_folder_response(restored)
 
     async def delete_file(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         file_id: uuid.UUID,
     ) -> schemas.MessageResponse:
-        file_row = await self.repo.get_file_by_id(conn, file_id)
+        file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
         self._require_owner(file_row, current_user["id"])
         if file_row["is_trashed"]:
             return schemas.MessageResponse(message="File already in trash.")
 
-        row = await self.repo.trash_file(conn, file_id)
+        row = await self.repo.trash_file(file_id)
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return schemas.MessageResponse(message="File moved to trash.")
 
     async def restore_file(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         file_id: uuid.UUID,
     ) -> schemas.FileResponse:
-        file_row = await self.repo.get_file_by_id(conn, file_id)
+        file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
         self._require_owner(file_row, current_user["id"])
@@ -1136,7 +956,7 @@ class FileOperationsService:
 
         file_size = file_row.get("size_bytes", 0)
         if file_size > 0:
-            has_space = await self._check_storage_available(conn, current_user["id"], file_size)
+            has_space = await self._check_storage_available(current_user["id"], file_size)
             if not has_space:
                 raise HTTPException(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -1160,9 +980,9 @@ class FileOperationsService:
             )
 
         async def _perform_operation():
-            async with conn.transaction():
-                new_name = await self._handle_restored_name_collision(conn, parent_id, owner_id, file_name, is_file=True)
-                return await self.repo.restore_file(conn, file_id, new_name)
+            async with self.repo.conn.transaction():
+                new_name = await self._handle_restored_name_collision(parent_id, owner_id, file_name, is_file=True)
+                return await self.repo.restore_file(file_id, new_name)
 
         try:
             restored = await self._with_db_retry(_perform_operation)
@@ -1174,21 +994,20 @@ class FileOperationsService:
         if not restored:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to restore file.")
 
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return self._as_file_response(restored)
 
     async def share_item(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         payload: schemas.ShareCreateRequest,
     ) -> schemas.ShareResponse:
         if payload.target_type == "file":
-            target = await self.repo.get_file_by_id(conn, payload.target_id)
+            target = await self.repo.get_file_by_id(payload.target_id)
             file_id = payload.target_id
             folder_id = None
         else:
-            target = await self.repo.get_folder_by_id(conn, payload.target_id)
+            target = await self.repo.get_folder_by_id(payload.target_id)
             file_id = None
             folder_id = payload.target_id
 
@@ -1204,13 +1023,12 @@ class FileOperationsService:
             if payload.grantee_id == current_user["id"]:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot share with yourself.")
             existing = await self.repo.get_live_user_share(
-                conn,
                 file_id=file_id,
                 folder_id=folder_id,
                 grantee_id=payload.grantee_id,
             )
             if existing:
-                updated = await self.repo.update_acl_entry_permission(conn, existing["id"], payload.permission)
+                updated = await self.repo.update_acl_entry_permission(existing["id"], payload.permission)
                 if not updated:
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND, 
@@ -1219,7 +1037,6 @@ class FileOperationsService:
                 return self._as_share_response(updated)
 
             row = await self.repo.create_acl_entry(
-                conn,
                 file_id=file_id,
                 folder_id=folder_id,
                 principal_type="user",
@@ -1233,10 +1050,9 @@ class FileOperationsService:
 
         share_token = payload.share_token or secrets.token_urlsafe(32)
         password_hash = hash_password(payload.password) if payload.password else None
-        existing_link = await self.repo.get_live_public_link(conn, file_id=file_id, folder_id=folder_id)
+        existing_link = await self.repo.get_live_public_link(file_id=file_id, folder_id=folder_id)
         if existing_link:
             updated = await self.repo.update_live_public_link(
-                conn,
                 existing_link["id"],
                 share_token=share_token if payload.share_token else existing_link["share_token"],
                 password_hash=password_hash,
@@ -1250,7 +1066,6 @@ class FileOperationsService:
             return self._as_share_response(updated)
 
         row = await self.repo.create_acl_entry(
-            conn,
             file_id=file_id,
             folder_id=folder_id,
             principal_type="public_link",
@@ -1264,27 +1079,25 @@ class FileOperationsService:
 
     async def revoke_share(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         share_id: uuid.UUID,
     ) -> schemas.MessageResponse:
-        share = await self.repo.get_acl_entry(conn, share_id)
+        share = await self.repo.get_acl_entry(share_id)
         if not share:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found.")
 
         if share["created_by"] != current_user["id"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner access required.")
 
-        await self.repo.revoke_acl_entry(conn, share_id)
+        await self.repo.revoke_acl_entry(share_id)
         return schemas.MessageResponse(message="Share revoked.")
 
     async def hard_delete_file(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         file_id: uuid.UUID,
     ) -> schemas.MessageResponse:
-        file_row = await self.repo.get_file_by_id(conn, file_id)
+        file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
         self._require_owner(file_row, current_user["id"])
@@ -1309,8 +1122,8 @@ class FileOperationsService:
 
         # Object deleted (or no storage_key). Now remove DB row.
         try:
-            async with conn.transaction():
-                deleted = await self.repo.delete_file_by_id(conn, file_id)
+            async with self.repo.conn.transaction():
+                deleted = await self.repo.delete_file_by_id(file_id)
                 if not deleted:
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file row.")
         except HTTPException:
@@ -1318,16 +1131,15 @@ class FileOperationsService:
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file row.") from exc
 
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return schemas.MessageResponse(message="File permanently deleted.")
 
     async def hard_delete_folder(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         folder_id: uuid.UUID,
     ) -> schemas.MessageResponse:
-        folder = await self.repo.get_folder_by_id(conn, folder_id)
+        folder = await self.repo.get_folder_by_id(folder_id)
         if not folder:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
         self._require_owner(folder, current_user["id"])
@@ -1336,7 +1148,7 @@ class FileOperationsService:
 
         folder_path = folder.get("path")
         # gather files under this path
-        files = await self.repo.list_files_under_path(conn, folder_path)
+        files = await self.repo.list_files_under_path(folder_path)
 
         # Attempt to delete each object's blob synchronously with retries. If any fail, abort and return error.
         for f in files:
@@ -1358,22 +1170,21 @@ class FileOperationsService:
 
         # All object deletions succeeded (or no storage_key). Delete folder rows and files under path atomically.
         try:
-            async with conn.transaction():
-                await self.repo.delete_files_under_path(conn, folder_path)
-                await self.repo.delete_folders_under_path(conn, folder_path)
+            async with self.repo.conn.transaction():
+                await self.repo.delete_files_under_path(folder_path)
+                await self.repo.delete_folders_under_path(folder_path)
         except Exception as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete folder rows.") from exc
 
-        await self._recalculate_user_storage(conn, current_user["id"])
+        await self._recalculate_user_storage(current_user["id"])
         return schemas.MessageResponse(message="Folder and contents permanently deleted.")
 
     async def hard_delete_all_trash(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
     ) -> schemas.MessageResponse:
         owner_id = current_user["id"]
-        files = await self.repo.list_trashed_files_by_owner(conn, owner_id)
+        files = await self.repo.list_trashed_files_by_owner(owner_id)
 
         for f in files:
             storage_key = f.get("storage_key")
@@ -1394,31 +1205,30 @@ class FileOperationsService:
 
             # delete DB row for this file
             try:
-                async with conn.transaction():
-                    await self.repo.delete_file_by_id(conn, f["id"])
+                async with self.repo.conn.transaction():
+                    await self.repo.delete_file_by_id(f["id"])
             except Exception:
                 pass
 
         # Remove trashed folder rows
-        async with conn.transaction():
-            await self.repo.delete_trashed_folders_by_owner(conn, owner_id)
+        async with self.repo.conn.transaction():
+            await self.repo.delete_trashed_folders_by_owner(owner_id)
 
-        await self._recalculate_user_storage(conn, owner_id)
+        await self._recalculate_user_storage(owner_id)
         return schemas.MessageResponse(message="Trash emptied (permanently deleted).")
 
     async def _require_view_access(
         self,
-        conn: asyncpg.Connection,
         *,
         target_type: Literal["file", "folder"],
         target_id: uuid.UUID,
         current_user_id: uuid.UUID,
     ) -> None:
         is_file = target_type == "file"
-        path = await (self.repo.get_path_for_file(conn, target_id) if is_file else self.repo.get_path_for_folder(conn, target_id))
+        path = await (self.repo.get_path_for_file(target_id) if is_file else self.repo.get_path_for_folder(target_id))
         if not path:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
-        owner_row = await (self.repo.get_owner_and_trashed_for_file(conn, target_id) if is_file else self.repo.get_owner_and_trashed_for_folder(conn, target_id))
+        owner_row = await (self.repo.get_owner_and_trashed_for_file(target_id) if is_file else self.repo.get_owner_and_trashed_for_folder(target_id))
         if not owner_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
 
@@ -1427,7 +1237,7 @@ class FileOperationsService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target is trashed.")
             return
 
-        acl = await self.repo.get_effective_acl(conn, path, is_file, target_id, current_user_id)
+        acl = await self.repo.get_effective_acl(path, is_file, target_id, current_user_id)
         if not acl or not acl.get("permission"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="View permission required.")
 
@@ -1442,86 +1252,69 @@ class FileOperationsService:
 
     async def download_file_stream(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         file_id: uuid.UUID,
         range_header: str | None = None,
     ) -> StreamingResponse:
-        file_row = await self.repo.get_file_by_id(conn, file_id)
+        file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
-        await self._require_view_access(conn, target_type="file", target_id=file_id, current_user_id=current_user["id"])
+        await self._require_view_access(target_type="file", target_id=file_id, current_user_id=current_user["id"])
 
-        client = self.storage._get_client()
-        params = {"Bucket": self.storage.bucket_name, "Key": file_row["storage_key"]}
-        if range_header:
-            params["Range"] = range_header
-
-        try:
-            response = await asyncio.to_thread(client.get_object, **params)
-        except ClientError as exc:
-            # Map 404 from object store to 404
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found in storage.") from exc
-
-        body = response["Body"]
-
-        async def stream_generator():
-            try:
-                while True:
-                    chunk = await asyncio.to_thread(body.read, 64 * 1024)
-                    if not chunk:
-                        break
-                    yield chunk
-            finally:
-                try:
-                    body.close()
-                except Exception:
-                    pass
+        # Fetch headers via head_object first to build StreamingResponse headers
+        head_res = await self.storage.head_object(file_row["storage_key"])
+        if not head_res:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found in storage.")
 
         headers: dict[str, str] = {}
-        # Content-Length
-        if "ContentLength" in response:
-            headers["Content-Length"] = str(response.get("ContentLength"))
-        # Content-Range (when partial)
-        content_range = response.get("ContentRange") or response.get("Content-Range")
-        if content_range:
-            headers["Content-Range"] = content_range
+        if "ContentLength" in head_res:
+            headers["Content-Length"] = str(head_res["ContentLength"])
+        
+        status_code = status.HTTP_200_OK
+        if range_header:
+            headers["Content-Range"] = head_res.get("ContentRange") or head_res.get("Content-Range") or ""
             status_code = status.HTTP_206_PARTIAL_CONTENT
-        else:
-            status_code = status.HTTP_200_OK
-
-        # Content-Type
-        media_type = response.get("ContentType") or file_row.get("mime_type") or "application/octet-stream"
-
+            
+        media_type = head_res.get("ContentType") or file_row.get("mime_type") or "application/octet-stream"
         headers["Accept-Ranges"] = "bytes"
         headers["Content-Disposition"] = f'attachment; filename="{file_row.get("file_name")}"'
+
+        async def stream_generator():
+            async with self.storage._get_client() as client:
+                params = {"Bucket": self.storage.bucket_name, "Key": file_row["storage_key"]}
+                if range_header:
+                    params["Range"] = range_header
+                try:
+                    response = await client.get_object(**params)
+                    async for chunk in response["Body"]:
+                        yield chunk
+                except Exception:
+                    pass
 
         return StreamingResponse(stream_generator(), status_code=status_code, media_type=media_type, headers=headers)
 
     async def get_storage_usage(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
     ) -> schemas.StorageUsageResponse:
-        used = await self.repo.get_storage_usage(conn, current_user["id"])
-        quota_row = await self._get_user_storage_quota(conn, current_user["id"])
+        used = await self.repo.get_storage_usage(current_user["id"])
+        quota_row = await self._get_user_storage_quota(current_user["id"])
         total = quota_row["storage_quota"] if quota_row else getattr(settings, "STORAGE_QUOTA_BYTES", 20 * 1024 ** 3)
         return schemas.StorageUsageResponse(used_bytes=used, total_bytes=total)
 
 
     async def get_storage_contents(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
         parent_folder_id: uuid.UUID | None = None,
     ) -> schemas.StorageContentResponse:
         if parent_folder_id:
             await self._require_view_access(
-                conn, target_type="folder", target_id=parent_folder_id, current_user_id=current_user["id"]
+                target_type="folder", target_id=parent_folder_id, current_user_id=current_user["id"]
             )
 
-        folders_raw = await self.repo.list_user_folders(conn, current_user["id"], parent_folder_id)
-        files_raw = await self.repo.list_user_files(conn, current_user["id"], parent_folder_id)
+        folders_raw = await self.repo.list_user_folders(current_user["id"], parent_folder_id)
+        files_raw = await self.repo.list_user_files(current_user["id"], parent_folder_id)
 
         return schemas.StorageContentResponse(
             folders=[self._as_folder_response(f) for f in folders_raw],
@@ -1530,13 +1323,12 @@ class FileOperationsService:
 
     async def get_trashed_contents(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
     ) -> schemas.StorageContentResponse:
         """Return trashed folders and files owned by the current user."""
         owner_id = current_user["id"]
-        folders_raw = await self.repo.list_trashed_folders_by_owner(conn, owner_id)
-        files_raw = await self.repo.list_trashed_files_by_owner(conn, owner_id)
+        folders_raw = await self.repo.list_trashed_folders_by_owner(owner_id)
+        files_raw = await self.repo.list_trashed_files_by_owner(owner_id)
 
         return schemas.StorageContentResponse(
             folders=[self._as_folder_response(f) for f in folders_raw],
@@ -1545,12 +1337,11 @@ class FileOperationsService:
 
     async def get_shared_with_me_contents(
         self,
-        conn: asyncpg.Connection,
         current_user: dict[str, Any],
     ) -> schemas.StorageContentResponse:
         owner_id = current_user["id"]
-        folders_raw = await self.repo.list_shared_with_me_folders(conn, owner_id)
-        files_raw = await self.repo.list_shared_with_me_files(conn, owner_id)
+        folders_raw = await self.repo.list_shared_with_me_folders(owner_id)
+        files_raw = await self.repo.list_shared_with_me_files(owner_id)
         
         shared_folder_ids = {f["id"] for f in folders_raw}
         
@@ -1579,11 +1370,10 @@ class FileOperationsService:
 
     async def get_breadcrumbs(
         self,
-        conn: asyncpg.Connection,
         target_id: uuid.UUID,
         is_file: bool,
     ) -> list[dict[str, str]]:
-        path_str = await (self.repo.get_path_for_file(conn, target_id) if is_file else self.repo.get_path_for_folder(conn, target_id))
+        path_str = await (self.repo.get_path_for_file(target_id) if is_file else self.repo.get_path_for_folder(target_id))
         if not path_str:
             return []
             
@@ -1599,7 +1389,7 @@ class FileOperationsService:
         if not uuids:
             return []
             
-        folders = await self.repo.get_folders_by_ids(conn, uuids)
+        folders = await self.repo.get_folders_by_ids(uuids)
         folder_dict = {f["id"]: f["folder_name"] for f in folders}
         
         result = []

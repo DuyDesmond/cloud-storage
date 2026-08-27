@@ -1,7 +1,7 @@
 import secrets
 import asyncpg
 from typing import Optional
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
 from app.modules.share.repository import ShareRepository
 from app.modules.share import schemas
 from app.core.security import hash_password
@@ -9,16 +9,17 @@ from app.core.config import settings
 import uuid
 import httpx
 
-share_repository = ShareRepository()
 
 class ShareService:
-    async def _verify_owner(self, conn: asyncpg.Connection, target_id: uuid.UUID, is_file: bool, user_id: uuid.UUID) -> None:
-        is_owner = await share_repository.check_is_owner(conn, target_id, is_file, user_id)
+    def __init__(self, repo: ShareRepository = Depends()):
+        self.repo = repo
+    async def _verify_owner(self, target_id: uuid.UUID, is_file: bool, user_id: uuid.UUID) -> None:
+        is_owner = await self.repo.check_is_owner(target_id, is_file, user_id)
         if not is_owner:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to perform this action.")
 
-    async def share_with_user(self, conn: asyncpg.Connection, request: schemas.ShareWithUserRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
-        await self._verify_owner(conn, request.target_id, request.is_file, owner_id)
+    async def share_with_user(self, request: schemas.ShareWithUserRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
+        await self._verify_owner(request.target_id, request.is_file, owner_id)
         
         # Look up user by email via internal API
         async with httpx.AsyncClient() as client:
@@ -33,11 +34,11 @@ class ShareService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot share file with yourself.")
             
         pwd_hash = hash_password(request.password) if request.password else None
-        await share_repository.upsert_user_share(conn, request.target_id, request.is_file, grantee_id, request.permission, owner_id, pwd_hash)
+        await self.repo.upsert_user_share(request.target_id, request.is_file, grantee_id, request.permission, owner_id, pwd_hash)
         return schemas.GenericMessageResponse(message="Share updated successfully")
 
-    async def revoke_user_share(self, conn: asyncpg.Connection, request: schemas.RevokeUserShareRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
-        await self._verify_owner(conn, request.target_id, request.is_file, owner_id)
+    async def revoke_user_share(self, request: schemas.RevokeUserShareRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
+        await self._verify_owner(request.target_id, request.is_file, owner_id)
         
         async with httpx.AsyncClient() as client:
             resp = await client.get(f"{settings.AUTH_SERVICE_URL}/internal/users/by-email", params={"email": request.email})
@@ -46,26 +47,26 @@ class ShareService:
             resp.raise_for_status()
             grantee = resp.json()
             
-        await share_repository.revoke_user_share(conn, request.target_id, request.is_file, uuid.UUID(grantee['id']))
+        await self.repo.revoke_user_share(request.target_id, request.is_file, uuid.UUID(grantee['id']))
         return schemas.GenericMessageResponse(message="Share revoked successfully")
 
-    async def set_public_link(self, conn: asyncpg.Connection, request: schemas.SetPublicLinkRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
-        await self._verify_owner(conn, request.target_id, request.is_file, owner_id)
+    async def set_public_link(self, request: schemas.SetPublicLinkRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
+        await self._verify_owner(request.target_id, request.is_file, owner_id)
         
         if not request.enabled:
-            await share_repository.revoke_public_link(conn, request.target_id, request.is_file)
+            await self.repo.revoke_public_link(request.target_id, request.is_file)
             return schemas.GenericMessageResponse(message="Public link disabled successfully")
             
         token = secrets.token_urlsafe(32)
         pwd_hash = hash_password(request.password) if request.password else None
         
-        await share_repository.upsert_public_link(conn, request.target_id, request.is_file, token, pwd_hash, request.permission, owner_id)
+        await self.repo.upsert_public_link(request.target_id, request.is_file, token, pwd_hash, request.permission, owner_id)
         return schemas.GenericMessageResponse(message="Public link enabled successfully")
 
-    async def get_share_state(self, conn: asyncpg.Connection, target_id: uuid.UUID, is_file: bool, owner_id: uuid.UUID) -> schemas.ShareStateResponse:
-        await self._verify_owner(conn, target_id, is_file, owner_id)
+    async def get_share_state(self, target_id: uuid.UUID, is_file: bool, owner_id: uuid.UUID) -> schemas.ShareStateResponse:
+        await self._verify_owner(target_id, is_file, owner_id)
         
-        records = await share_repository.get_share_state(conn, target_id, is_file)
+        records = await self.repo.get_share_state(target_id, is_file)
         
         users = []
         public_link = schemas.PublicLinkStateResponse(enabled=False, permission="view", has_password=False, link=None)
@@ -86,7 +87,7 @@ class ShareService:
                 
         return schemas.ShareStateResponse(public_link=public_link, users=users)
 
-    async def visit_public_link(self, conn: asyncpg.Connection, share_token: str, user_id: uuid.UUID) -> dict:
+    async def visit_public_link(self, share_token: str, user_id: uuid.UUID) -> dict:
         from app.core.redis import redis_client
         import json
         
@@ -104,7 +105,7 @@ class ShareService:
                     acl["folder_id"] = uuid.UUID(acl["folder_id"])
                     
         if not acl:
-            acl_row = await share_repository.get_acl_by_token(conn, share_token)
+            acl_row = await self.repo.get_acl_by_token(share_token)
             if not acl_row:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found or revoked.")
             acl = dict(acl_row)
@@ -120,7 +121,7 @@ class ShareService:
                 # Cache for 10 minutes to protect against viral traffic bursts
                 await redis_client.set(f"public_link_acl:{share_token}", json.dumps(cache_data), ex=600)
         
-        await share_repository.upsert_public_link_visitor(conn, user_id, acl['id'])
+        await self.repo.upsert_public_link_visitor(user_id, acl['id'])
         
         return {
             "message": "Link visited successfully",
