@@ -21,19 +21,7 @@ class FileManagementService(BaseFileService):
     ):
         super().__init__(query_repo, quota_repo, trash_repo, management_repo, storage)
 
-    async def _handle_filename_collision(self, parent_folder_id, current_user_id, clean_name, on_collision):
-            if on_collision == "keep_duplicate":
-                return await self.management_repo.resolve_file_name_collision(
-                    parent_folder_id, current_user_id, clean_name
-                )
-            elif on_collision == "replace":
-                existing = await self.query_repo.get_file_by_parent_and_name(
-                    parent_folder_id, clean_name, current_user_id
-                )
-                if existing:
-                    await self.trash_repo.trash_file(existing["id"])
-                return clean_name
-            return clean_name
+
 
     async def create_folder(
             self,
@@ -53,7 +41,7 @@ class FileManagementService(BaseFileService):
     
             async def _perform_operation():
                 async with self.management_repo.conn.transaction():
-                    await self.management_repo.call_lock_naming_scope(payload.parent_folder_id, current_user["id"])
+                    await self.management_repo.call_lock_naming_scope(payload.parent_folder_id, owner_id)
                     
                     final_name = clean_name
                     if on_col == "keep_duplicate":

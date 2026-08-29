@@ -50,3 +50,34 @@ async def get_current_user(
             )
 
     return {"id": user_id}
+
+async def get_optional_current_user(
+    request: Request,
+    auth_client: AuthServiceClient = Depends(AuthServiceClient),
+    cache: CacheRepository = Depends(CacheRepository),
+) -> dict | None:
+    """FastAPI Dependency: Returns current user if token exists and is valid, else None."""
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        return None
+
+    sub = payload.get("sub")
+    if not sub:
+        return None
+
+    try:
+        user_id = uuid.UUID(str(sub))
+    except (ValueError, TypeError):
+        return None
+
+    revoked_ts = await cache.get_revoked_token_ts(user_id)
+    if revoked_ts:
+        iat = payload.get("iat", 0)
+        if revoked_ts >= iat:
+            return None
+
+    return {"id": user_id}

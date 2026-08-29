@@ -158,7 +158,7 @@ class FileQueryRepository(BaseRepository):
         path: str, 
         is_file: bool, 
         target_id: uuid.UUID, 
-        user_id: uuid.UUID
+        user_id: uuid.UUID | None
     ) -> dict | None:
         row = await self.conn.fetchrow(queries.GET_EFFECTIVE_ACL, path, is_file, target_id, user_id)
         return dict(row) if row else None

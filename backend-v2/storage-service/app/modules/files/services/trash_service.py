@@ -125,7 +125,7 @@ class TrashService(BaseFileService):
             current_user: dict[str, Any],
         ) -> schemas.MessageResponse:
             owner_id = current_user["id"]
-            files = await self.query_repo.list_trashed_files_by_owner(owner_id)
+            files = await self.trash_repo.list_trashed_files_by_owner(owner_id)
     
             for f in files:
                 storage_key = f.get("storage_key")
@@ -172,7 +172,7 @@ class TrashService(BaseFileService):
     
             file_size = file_row.get("size_bytes", 0)
             if file_size > 0:
-                has_space = await self._check_storage_available(current_user["id"], file_size)
+                has_space = await self.quota_repo.check_storage_available(current_user["id"], file_size)
                 if not has_space:
                     raise QuotaExceededError("Storage quota exceeded.",)
     
@@ -230,7 +230,7 @@ class TrashService(BaseFileService):
             if folder_path:
                 trashed_size = await self.query_repo.get_folder_trashed_size(folder_path)
                 if trashed_size > 0:
-                    has_space = await self._check_storage_available(current_user["id"], trashed_size)
+                    has_space = await self.quota_repo.check_storage_available(current_user["id"], trashed_size)
                     if not has_space:
                         raise QuotaExceededError("Storage quota exceeded.",)
     

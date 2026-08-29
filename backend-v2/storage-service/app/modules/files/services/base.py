@@ -1,4 +1,6 @@
-from typing import Any
+from app.core.exceptions import ItemNotFoundError
+from app.core.security import hash_password
+from typing import Any, Literal
 import uuid
 from app.core.exceptions import AccessDeniedError, InfrastructureError
 from app.modules.files.repositories import FileQueryRepository, StorageQuotaRepository, TrashRepository, FileManagementRepository
@@ -101,7 +103,7 @@ class BaseFileService:
             *,
             target_type: Literal["file", "folder"],
             target_id: uuid.UUID,
-            current_user_id: uuid.UUID,
+            current_user_id: uuid.UUID | None,
         ) -> None:
             is_file = target_type == "file"
             path = await (self.query_repo.get_path_for_file(target_id) if is_file else self.query_repo.get_path_for_folder(target_id))
@@ -111,7 +113,7 @@ class BaseFileService:
             if not owner_row:
                 raise ItemNotFoundError("Target not found.")
     
-            if owner_row["owner_id"] == current_user_id:
+            if current_user_id and owner_row["owner_id"] == current_user_id:
                 if owner_row["is_trashed"]:
                     raise InfrastructureError("Target is trashed.")
                 return
@@ -128,3 +130,20 @@ class BaseFileService:
                     raise AccessDeniedError("PASSWORD_REQUIRED")
                 if hash_password(self.provided_password) != password_hash:
                     raise AccessDeniedError("INVALID_PASSWORD")
+
+    async def _handle_filename_collision(self, parent_folder_id, current_user_id, clean_name, on_collision):
+            if on_collision == "keep_duplicate":
+                return await self.management_repo.resolve_file_name_collision(
+                    parent_folder_id, current_user_id, clean_name
+                )
+            elif on_collision == "replace":
+                existing = await self.query_repo.get_file_by_parent_and_name(
+                    parent_folder_id, clean_name, current_user_id
+                )
+                if existing:
+                    await self.trash_repo.trash_file(existing["id"])
+                return clean_name
+            return clean_name
+        
+    async def _recalculate_user_storage(self, owner_id) -> None:
+            await self.quota_repo.update_user_storage_usage(owner_id)

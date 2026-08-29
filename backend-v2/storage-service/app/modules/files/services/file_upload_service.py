@@ -1,4 +1,11 @@
-from typing import Any
+from fastapi import UploadFile
+from fastapi import status
+from fastapi.responses import StreamingResponse
+from app.core.exceptions import AccessDeniedError
+from aioboto3.resources.action import logger
+from app.core.exceptions import DomainError
+from aiohttp import ClientError
+from typing import Any, Literal
 from fastapi import Depends
 import uuid
 import asyncio
@@ -109,24 +116,24 @@ class FileUploadService(BaseFileService):
             clean_name = sanitize_filename(payload.file_name)
     
             async def _do_create():
-                await self.management_repo.call_lock_naming_scope(payload.parent_folder_id, current_user["id"])
+                await self.management_repo.call_lock_naming_scope(payload.parent_folder_id, owner_id)
     
                 final_name = clean_name
                 if await self.query_repo.file_exists_by_name(
                     payload.parent_folder_id,
-                    current_user["id"],
+                    owner_id,
                     clean_name,
                 ):
                     final_name = await self.management_repo.resolve_file_name_collision(
                         payload.parent_folder_id,
-                        current_user["id"],
+                        owner_id,
                         clean_name,
                     )
     
                 file_id = uuid.uuid4()
                 row = await self.management_repo.create_file(
                     file_id=file_id,
-                    owner_id=current_user["id"],
+                    owner_id=owner_id,
                     parent_folder_id=payload.parent_folder_id,
                     storage_key=payload.storage_key,
                     file_name=final_name,
@@ -199,7 +206,7 @@ class FileUploadService(BaseFileService):
     
             async def _perform_operation():
                 async with self.management_repo.conn.transaction():
-                    await self.management_repo.call_lock_naming_scope(parent_folder_id, current_user["id"])
+                    await self.management_repo.call_lock_naming_scope(parent_folder_id, owner_id)
     
                     final_name = await self._handle_filename_collision(parent_folder_id, owner_id, clean_name, on_collision)
     
@@ -282,6 +289,7 @@ class FileUploadService(BaseFileService):
             payload: schemas.CompleteMultipartUploadRequest,
         ) -> schemas.FileResponse:
             await self._require_parent_access(payload.parent_folder_id, current_user["id"])
+            owner_id = await self._resolve_owner_id(payload.parent_folder_id, current_user["id"])
             user_prefix = f"storage/{current_user['id']}/"
             if not payload.storage_key.startswith(user_prefix):
                 raise AccessDeniedError("Invalid storage key for current user.",)
@@ -312,24 +320,24 @@ class FileUploadService(BaseFileService):
             clean_name = sanitize_filename(payload.file_name)
     
             async def _do_create():
-                await self.management_repo.call_lock_naming_scope(payload.parent_folder_id, current_user["id"])
+                await self.management_repo.call_lock_naming_scope(payload.parent_folder_id, owner_id)
     
                 final_name = clean_name
                 if await self.query_repo.file_exists_by_name(
                     payload.parent_folder_id,
-                    current_user["id"],
+                    owner_id,
                     clean_name,
                 ):
                     final_name = await self.management_repo.resolve_file_name_collision(
                         payload.parent_folder_id,
-                        current_user["id"],
+                        owner_id,
                         clean_name,
                     )
     
                 file_id = uuid.uuid4()
                 row = await self.management_repo.create_file(
                     file_id=file_id,
-                    owner_id=current_user["id"],
+                    owner_id=owner_id,
                     parent_folder_id=payload.parent_folder_id,
                     storage_key=payload.storage_key,
                     file_name=final_name,
@@ -361,14 +369,15 @@ class FileUploadService(BaseFileService):
 
     async def download_file_stream(
             self,
-            current_user: dict[str, Any],
+            current_user: dict[str, Any] | None,
             file_id: uuid.UUID,
             range_header: str | None = None,
         ) -> StreamingResponse:
             file_row = await self.query_repo.get_file_by_id(file_id)
             if not file_row:
                 raise ItemNotFoundError("File not found.")
-            await self._require_view_access(target_type="file", target_id=file_id, current_user_id=current_user["id"])
+            current_user_id = current_user["id"] if current_user else None
+            await self._require_view_access(target_type="file", target_id=file_id, current_user_id=current_user_id)
     
             # Fetch headers via head_object first to build StreamingResponse headers
             head_res = await self.storage.head_object(file_row["storage_key"])

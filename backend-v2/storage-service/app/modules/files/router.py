@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, UploadFile, status, Request
 from app.core.rate_limit import limiter
 
 from app.core.database import get_db_connection
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_optional_current_user
 from app.modules.files import schemas
 from app.modules.files.services import (
     FileQueryService,
@@ -180,7 +180,7 @@ async def abort_multipart_upload(request: Request,
 @map_domain_exceptions
 async def download_file(request: Request, 
     file_id: uuid.UUID,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_current_user),
     service: FileUploadService = Depends(FileUploadService),
 ):
     range_header = request.headers.get("range") or request.headers.get("Range")

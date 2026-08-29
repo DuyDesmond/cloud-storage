@@ -101,9 +101,11 @@ CHECK_OWNER_FOLDER = """
 """
 
 GET_ACL_BY_TOKEN = """
-    SELECT id, file_id, folder_id, principal_type, permission, password_hash
-    FROM storage.acl_entries
-    WHERE share_token = $1 AND revoked_at IS NULL
+    SELECT a.id, a.file_id, a.folder_id, a.principal_type, a.permission, a.password_hash,
+           f.file_name, f.mime_type, f.size_bytes
+    FROM storage.acl_entries a
+    LEFT JOIN storage.files f ON a.file_id = f.id
+    WHERE a.share_token = $1 AND a.revoked_at IS NULL
 """
 
 UPSERT_PUBLIC_LINK_VISITOR = """

@@ -4,7 +4,7 @@ from app.core.rate_limit import limiter
 import asyncpg
 
 from app.core.database import get_db_connection
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_optional_current_user
 from app.modules.share import schemas
 from app.modules.share.service import ShareService
 
@@ -56,7 +56,7 @@ async def get_share_state(
 async def visit_public_link(
     request: Request, 
     share_token: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_current_user),
     share_service: ShareService = Depends(ShareService),
     ):
-    return await share_service.visit_public_link(share_token, current_user['id'])
+    return await share_service.visit_public_link(share_token, current_user['id'] if current_user else None)

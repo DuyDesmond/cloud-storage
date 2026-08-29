@@ -31,6 +31,7 @@ import { DriveItemCard } from '../../shared/components/drive-item-card/drive-ite
 import { DriveItem } from '../../shared/components/drive-item-card/drive-item.model';
 import { ShareDialog } from '../share-dialog/share-dialog';
 import { Breadcrumb } from '../../shared/components/breadcrumb/breadcrumb';
+import { FilePreview } from '../file-preview/file-preview';
 @Component({
   selector: 'app-shared-with-me',
   imports: [
@@ -193,6 +194,14 @@ export class SharedWithMe implements OnInit, OnDestroy {
   onOpenItem(item: DriveItem): void {
     if (item.itemType === 'folder') {
       this.router.navigateByUrl(`/drive/shared-with-me/folder/${item.id}`);
+    } else {
+      this.dialog.open(FilePreview, {
+        width: '80vw',
+        height: '80vh',
+        maxWidth: '1200px',
+        panelClass: 'preview-dialog-panel',
+        data: { item },
+      });
     }
   }
 

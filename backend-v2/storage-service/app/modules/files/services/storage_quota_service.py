@@ -1,4 +1,5 @@
-from typing import Any
+from app.core.config import settings
+from typing import Any, Literal
 from fastapi import Depends
 import uuid
 import asyncio
@@ -20,12 +21,6 @@ class StorageQuotaService(BaseFileService):
         storage: StorageGateway = Depends(R2StorageGateway),
     ):
         super().__init__(query_repo, quota_repo, trash_repo, management_repo, storage)
-
-    async def _check_storage_available(self, owner_id, size: int) -> bool:
-            return await self.quota_repo.check_storage_available(owner_id, size)
-
-    async def _recalculate_user_storage(self, owner_id) -> None:
-            await self.quota_repo.update_user_storage_usage(owner_id)
 
     async def _get_user_storage_quota(self, owner_id) -> dict:
             return await self.quota_repo.get_user_storage_quota(owner_id)

@@ -89,7 +89,7 @@ class ShareService:
                 
         return schemas.ShareStateResponse(public_link=public_link, users=users)
 
-    async def visit_public_link(self, share_token: str, user_id: uuid.UUID) -> dict:
+    async def visit_public_link(self, share_token: str, user_id: uuid.UUID | None) -> dict:
         acl = await self.cache.get_share_acl(share_token)
         if acl:
             # Reconstruct UUID fields natively
@@ -114,5 +114,8 @@ class ShareService:
         return {
             "message": "Link visited successfully",
             "is_file": acl['file_id'] is not None,
-            "target_id": acl['file_id'] or acl['folder_id']
+            "target_id": acl['file_id'] or acl['folder_id'],
+            "file_name": acl.get('file_name'),
+            "mime_type": acl.get('mime_type'),
+            "size_bytes": acl.get('size_bytes')
         }
