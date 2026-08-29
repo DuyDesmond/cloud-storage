@@ -366,16 +366,24 @@ RETURNING id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed
 GET_USER_FOLDERS = """
 SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
 FROM storage.folders
-WHERE owner_id = $1 AND is_trashed = FALSE
-  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
+WHERE is_trashed = FALSE
+  AND (
+      ($2::uuid IS NULL AND parent_folder_id IS NULL AND owner_id = $1)
+      OR
+      ($2::uuid IS NOT NULL AND parent_folder_id = $2)
+  )
 """
 
 GET_USER_FILES = """
 SELECT id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_type, content_hash,
        path, is_trashed, trashed_at, created_at, updated_at
 FROM storage.files
-WHERE owner_id = $1 AND is_trashed = FALSE
-  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
+WHERE is_trashed = FALSE
+  AND (
+      ($2::uuid IS NULL AND parent_folder_id IS NULL AND owner_id = $1)
+      OR
+      ($2::uuid IS NOT NULL AND parent_folder_id = $2)
+  )
 """
 
 GET_SHARED_WITH_ME_FOLDERS = """

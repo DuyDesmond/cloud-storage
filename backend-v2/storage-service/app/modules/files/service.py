@@ -215,6 +215,13 @@ class FileOperationsService:
             return clean_name
         return clean_name
 
+    async def _resolve_owner_id(self, parent_folder_id: uuid.UUID | None, current_user_id: uuid.UUID) -> uuid.UUID:
+        if parent_folder_id:
+            parent = await self.repo.get_folder_by_id(parent_folder_id)
+            if parent:
+                return parent["owner_id"]
+        return current_user_id
+
     async def _check_storage_available(self, owner_id, size: int) -> bool:
         return await self.repo.check_storage_available(owner_id, size)
 
@@ -283,6 +290,7 @@ class FileOperationsService:
         payload: schemas.CompleteUploadRequest,
     ) -> schemas.FileResponse:
         await self._require_parent_access(payload.parent_folder_id, current_user["id"])
+        owner_id = await self._resolve_owner_id(payload.parent_folder_id, current_user["id"])
 
         user_prefix = f"storage/{current_user['id']}/"
         if not payload.storage_key.startswith(user_prefix):
@@ -597,12 +605,13 @@ class FileOperationsService:
         payload: schemas.FolderCreateRequest,
     ) -> schemas.FolderResponse:
         await self._require_parent_access(payload.parent_folder_id, current_user["id"])
+        owner_id = await self._resolve_owner_id(payload.parent_folder_id, current_user["id"])
 
         clean_name = sanitize_filename(payload.folder_name or "New Folder")
         on_col = getattr(payload, "on_collision", None)
 
         if on_col is None:
-            collision = await self.repo.folder_exists_by_name(payload.parent_folder_id, current_user["id"], clean_name)
+            collision = await self.repo.folder_exists_by_name(payload.parent_folder_id, owner_id, clean_name)
             if collision:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, 
@@ -616,12 +625,12 @@ class FileOperationsService:
                 final_name = clean_name
                 if on_col == "keep_duplicate":
                     counter = 1
-                    while await self.repo.folder_exists_by_name(payload.parent_folder_id, current_user["id"], final_name):
+                    while await self.repo.folder_exists_by_name(payload.parent_folder_id, owner_id, final_name):
                         final_name = f"{clean_name} ({counter})"
                         counter += 1
                 elif on_col in ("replace", "merge"):
                     existing = await self.repo.get_folder_by_parent_and_name(
-                        payload.parent_folder_id, clean_name, current_user["id"]
+                        payload.parent_folder_id, clean_name, owner_id
                     )
                     if existing:
                         if on_col == "merge":
@@ -630,7 +639,7 @@ class FileOperationsService:
                             await self.repo.trash_folder(existing["id"])
 
                 return await self.repo.create_folder(
-                    current_user["id"],
+                    owner_id,
                     payload.parent_folder_id,
                     final_name,
                 )
@@ -650,11 +659,12 @@ class FileOperationsService:
         on_collision: Literal["replace", "keep_duplicate"] | None = "keep_duplicate",
     ) -> schemas.FileResponse:
         await self._require_parent_access(parent_folder_id, current_user["id"])
+        owner_id = await self._resolve_owner_id(parent_folder_id, current_user["id"])
 
         clean_name = sanitize_filename(upload_file.filename or "untitled")
 
         if on_collision is None:
-            collision = await self.repo.file_exists_by_name(parent_folder_id, current_user["id"], clean_name)
+            collision = await self.repo.file_exists_by_name(parent_folder_id, owner_id, clean_name)
             if collision:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -707,11 +717,11 @@ class FileOperationsService:
             async with self.repo.conn.transaction():
                 await self.repo.call_lock_naming_scope(parent_folder_id, current_user["id"])
 
-                final_name = await self._handle_filename_collision(parent_folder_id, current_user["id"], clean_name, on_collision)
+                final_name = await self._handle_filename_collision(parent_folder_id, owner_id, clean_name, on_collision)
 
                 return await self.repo.create_file(
                     file_id,
-                    current_user["id"],
+                    owner_id,
                     parent_folder_id,
                     storage_key,
                     final_name,

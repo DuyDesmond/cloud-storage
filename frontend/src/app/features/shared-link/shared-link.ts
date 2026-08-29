@@ -69,6 +69,6 @@ export class SharedLinkComponent implements OnInit {
   }
 
   goHome(): void {
-    this.router.navigate(['/']);
+    this.router.navigate(['/drive/root']);
   }
 }
