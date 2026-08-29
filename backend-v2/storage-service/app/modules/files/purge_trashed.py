@@ -40,15 +40,16 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
         logger.error("Database pool is not initialized.")
         return
 
-    repo = FileOperationsRepository()
     storage = R2StorageGateway()
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
     logger.info(f"Starting purge job for items trashed before {cutoff.isoformat()} ({retention_days} days retention)")
 
     async with database.pool.acquire() as conn:
+        repo = FileOperationsRepository(conn)
+        
         # 1. Purge individual trashed files
-        files = await repo.list_trashed_files_before(conn, cutoff)
+        files = await repo.list_trashed_files_before(cutoff)
         logger.info(f"Found {len(files)} trashed files eligible for hard-delete.")
 
         for f in files:
@@ -63,14 +64,14 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
 
             # Isolated short transaction per DB deletion
             async with conn.transaction():
-                deleted = await repo.delete_file_by_id(conn, file_id)
+                deleted = await repo.delete_file_by_id(file_id)
                 if deleted:
                     logger.info(f"Purged DB record for file {file_id}")
                 else:
                     logger.warning(f"No DB record found to delete for file {file_id}")
 
         # 2. Purge trashed Folders + child
-        folders = await repo.list_trashed_folders_before(conn, cutoff)
+        folders = await repo.list_trashed_folders_before(cutoff)
         logger.info(f"Found {len(folders)} trashed folders eligible for hard-delete.")
 
         for fld in folders:
@@ -80,7 +81,7 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
             if not folder_path:
                 continue
 
-            files_under = await repo.list_files_under_path(conn, folder_path)
+            files_under = await repo.list_files_under_path(folder_path)
             skip_folder = False
 
             # Delete physical storage for all child files in folder hierarchy
@@ -100,8 +101,8 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
 
             # Remove directory hierarchy records in a single transactional unit
             async with conn.transaction():
-                await repo.delete_files_under_path(conn, folder_path)
-                await repo.delete_folders_under_path(conn, folder_path)
+                await repo.delete_files_under_path(folder_path)
+                await repo.delete_folders_under_path(folder_path)
                 logger.info(f"Purged folder {folder_id} and all nested contents from DB")
 
 

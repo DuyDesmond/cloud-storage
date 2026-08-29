@@ -6,6 +6,9 @@ logger = logging.getLogger(__name__)
 
 redis_client: redis.Redis | None = None
 
+def get_redis_client() -> redis.Redis | None:
+    return redis_client
+
 async def init_redis():
     global redis_client
     redis_url = settings.REDIS_URL

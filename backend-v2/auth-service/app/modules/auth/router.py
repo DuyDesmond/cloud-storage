@@ -75,8 +75,8 @@ async def logout(
     auth_service: AuthService = Depends(AuthService),
 ):
     res = await auth_service.logout_user(current_user["id"])
-    response.delete_cookie(key="access_token")
-    response.delete_cookie(key="refresh_token")
+    response.delete_cookie(key="access_token", httponly=True, secure=True, samesite="lax")
+    response.delete_cookie(key="refresh_token", httponly=True, secure=True, samesite="lax")
     return res
 
 
@@ -96,8 +96,8 @@ async def delete_me(
 ):
     """Protected endpoint: Permanently deletes current user account."""
     res = await auth_service.delete_account(current_user["id"])
-    response.delete_cookie(key="access_token")
-    response.delete_cookie(key="refresh_token")
+    response.delete_cookie(key="access_token", httponly=True, secure=True, samesite="lax")
+    response.delete_cookie(key="refresh_token", httponly=True, secure=True, samesite="lax")
     return res
 
 @router.post("/forgot-password", response_model=schemas.MessageResponse)

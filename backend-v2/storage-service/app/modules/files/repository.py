@@ -293,22 +293,20 @@ class FileOperationsRepository:
 
     async def list_trashed_files_by_owner(
         self, 
-        owner_id: uuid.UUID,
-        parent_folder_id: uuid.UUID | None = None
+        owner_id: uuid.UUID
     ) -> list[dict[str, Any]]:
         rows = await self.conn.fetch(
             queries.GET_ALL_TRASHED_FILES_BY_OWNER, 
-            owner_id, parent_folder_id)
+            owner_id)
         return [dict(r) for r in rows]
 
     async def list_trashed_folders_by_owner(
         self, 
-        owner_id: uuid.UUID,
-        parent_folder_id: uuid.UUID | None = None
+        owner_id: uuid.UUID
     ) -> list[dict[str, Any]]:
         rows = await self.conn.fetch(
             queries.GET_ALL_TRASHED_FOLDERS_BY_OWNER, 
-            owner_id, parent_folder_id)
+            owner_id)
         return [dict(r) for r in rows]
 
     async def delete_file_by_id(

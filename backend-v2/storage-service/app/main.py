@@ -9,6 +9,7 @@ from app.core.redis import init_redis, close_redis
 from app.modules.files.models import get_file_operations_tables_sql
 from app.modules.files.router import router as file_operations_router
 from app.modules.share.router import router as share_router
+from app.core.rate_limit import setup_rate_limiting
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,6 @@ async def lifespan(app: FastAPI):
     # Shutdown: Close DB Pool
     await close_db_pool()
     await close_redis()
-
-
-from app.core.rate_limit import setup_rate_limiting
 
 app = FastAPI(title=settings.PROJECT_NAME + " - Storage Service", lifespan=lifespan)
 setup_rate_limiting(app)

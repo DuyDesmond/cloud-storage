@@ -35,20 +35,18 @@ class AuthService:
         self,
         payload: schemas.UserRegisterRequest,
     ) -> tuple[schemas.UserResponse, dict]:
-        # Check if user exists using injected repo instance
-        existing_user = await self.repo.get_by_email(payload.email)
-        if existing_user:
+        hashed_pwd = hash_password(payload.password)
+        
+        try:
+            # Save user using injected repo instance
+            new_user = await self.repo.create_user(
+                payload.email, hashed_pwd, payload.full_name
+            )
+        except asyncpg.exceptions.UniqueViolationError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email address already registered.",
             )
-
-        hashed_pwd = hash_password(payload.password)
-        
-        # Save user using injected repo instance
-        new_user = await self.repo.create_user(
-            payload.email, hashed_pwd, payload.full_name
-        )
 
         tokens = self.generate_tokens(str(new_user["id"]))
         return schemas.UserResponse(**new_user), tokens

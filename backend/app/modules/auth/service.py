@@ -178,7 +178,6 @@ class AuthService:
 
         # TODO: Integrate Email Service (Resend/SMTP) here
         # E.g., await send_reset_email(user["email"], reset_token)
-        print(f" RESET TOKEN for {user['email']}: {reset_token}")
 
         return {"message": "If that email is registered, a password reset link has been sent."}
 

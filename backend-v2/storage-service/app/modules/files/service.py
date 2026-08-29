@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.modules.files import schemas
 from app.modules.files.repository import FileOperationsRepository
+from app.core.auth_client import AuthServiceClient
 import logging
 
 logger = logging.getLogger(__name__)
@@ -187,9 +188,6 @@ class _HashingReader:
 
 
 class FileOperationsService:
-    def __init__(self, repo: FileOperationsRepository = Depends(FileOperationsRepository), storage: R2StorageGateway = Depends(R2StorageGateway)):
-        self.repo = repo
-        self.storage = storage
     async def _handle_restored_name_collision(self, parent_id, owner_id, original_name, is_file: bool):
         await self.repo.call_lock_naming_scope(parent_id, owner_id)
         if is_file:
@@ -219,40 +217,30 @@ class FileOperationsService:
         return clean_name
 
     async def _check_storage_available(self, owner_id, size: int) -> bool:
-        import httpx
-        from app.core.config import settings
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{settings.AUTH_SERVICE_URL}/internal/users/{owner_id}/storage")
-            resp.raise_for_status()
-            quota = resp.json()["storage_quota"]
+        resp_json = await self.auth_client.get_user_storage(owner_id)
+        quota = resp_json["storage_quota"]
         
         usage = await self.repo.get_storage_usage(owner_id)
         if quota is None: return True
         return (usage + size) <= quota
 
     async def _recalculate_user_storage(self, owner_id) -> None:
-        import httpx
-        from app.core.config import settings
         usage = await self.repo.get_storage_usage(owner_id)
-        async with httpx.AsyncClient() as client:
-            await client.put(f"{settings.AUTH_SERVICE_URL}/internal/users/{owner_id}/storage", json={"storage_used": usage})
+        await self.auth_client.update_user_storage(owner_id, usage)
 
     async def _get_user_storage_quota(self, owner_id) -> dict:
-        import httpx
-        from app.core.config import settings
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{settings.AUTH_SERVICE_URL}/internal/users/{owner_id}/storage")
-            resp.raise_for_status()
-            return resp.json()
+        return await self.auth_client.get_user_storage(owner_id)
 
     def __init__(
         self,
         repo: FileOperationsRepository = Depends(),
         storage: R2StorageGateway = Depends(),
+        auth_client: AuthServiceClient = Depends(),
         x_share_password: str | None = Header(default=None, alias="X-Share-Password"),
     ) -> None:
         self.repo = repo
         self.storage = storage
+        self.auth_client = auth_client
         self.provided_password = x_share_password
 
     async def request_presigned_upload(
@@ -997,100 +985,6 @@ class FileOperationsService:
         await self._recalculate_user_storage(current_user["id"])
         return self._as_file_response(restored)
 
-    async def share_item(
-        self,
-        current_user: dict[str, Any],
-        payload: schemas.ShareCreateRequest,
-    ) -> schemas.ShareResponse:
-        if payload.target_type == "file":
-            target = await self.repo.get_file_by_id(payload.target_id)
-            file_id = payload.target_id
-            folder_id = None
-        else:
-            target = await self.repo.get_folder_by_id(payload.target_id)
-            file_id = None
-            folder_id = payload.target_id
-
-        if not target:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
-
-        self._require_owner(target, current_user["id"])
-        self._require_target_live(target)
-
-        if payload.principal_type == "user":
-            if not payload.grantee_id:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="grantee_id is required for user shares.")
-            if payload.grantee_id == current_user["id"]:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot share with yourself.")
-            existing = await self.repo.get_live_user_share(
-                file_id=file_id,
-                folder_id=folder_id,
-                grantee_id=payload.grantee_id,
-            )
-            if existing:
-                updated = await self.repo.update_acl_entry_permission(existing["id"], payload.permission)
-                if not updated:
-                        raise HTTPException(
-                            status_code=status.HTTP_404_NOT_FOUND, 
-                            detail="Failed to update share permissions; entry no longer exists."
-                        )
-                return self._as_share_response(updated)
-
-            row = await self.repo.create_acl_entry(
-                file_id=file_id,
-                folder_id=folder_id,
-                principal_type="user",
-                grantee_id=payload.grantee_id,
-                share_token=None,
-                password_hash=None,
-                permission=payload.permission,
-                created_by=current_user["id"],
-            )
-            return self._as_share_response(row)
-
-        share_token = payload.share_token or secrets.token_urlsafe(32)
-        password_hash = hash_password(payload.password) if payload.password else None
-        existing_link = await self.repo.get_live_public_link(file_id=file_id, folder_id=folder_id)
-        if existing_link:
-            updated = await self.repo.update_live_public_link(
-                existing_link["id"],
-                share_token=share_token if payload.share_token else existing_link["share_token"],
-                password_hash=password_hash,
-                permission=payload.permission,
-            )
-            if not updated:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND, 
-                        detail="Failed to update public link; link no longer exists."
-                    )
-            return self._as_share_response(updated)
-
-        row = await self.repo.create_acl_entry(
-            file_id=file_id,
-            folder_id=folder_id,
-            principal_type="public_link",
-            grantee_id=None,
-            share_token=share_token,
-            password_hash=password_hash,
-            permission=payload.permission,
-            created_by=current_user["id"],
-        )
-        return self._as_share_response(row)
-
-    async def revoke_share(
-        self,
-        current_user: dict[str, Any],
-        share_id: uuid.UUID,
-    ) -> schemas.MessageResponse:
-        share = await self.repo.get_acl_entry(share_id)
-        if not share:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found.")
-
-        if share["created_by"] != current_user["id"]:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner access required.")
-
-        await self.repo.revoke_acl_entry(share_id)
-        return schemas.MessageResponse(message="Share revoked.")
 
     async def hard_delete_file(
         self,

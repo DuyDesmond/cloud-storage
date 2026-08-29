@@ -1,10 +1,12 @@
 import asyncpg
 from typing import AsyncGenerator
+import logging
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Global connection pool reference
 pool: asyncpg.Pool | None = None
-
 
 async def init_db_pool() -> asyncpg.Pool:
     """Initializes the asyncpg connection pool on application startup."""

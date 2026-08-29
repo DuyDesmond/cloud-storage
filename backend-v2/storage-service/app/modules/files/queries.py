@@ -236,14 +236,12 @@ SELECT id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_
        path, is_trashed, trashed_at, created_at, updated_at
 FROM storage.files
 WHERE owner_id = $1 AND is_trashed = TRUE
-  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
 """
 
 GET_ALL_TRASHED_FOLDERS_BY_OWNER = """
 SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
 FROM storage.folders
 WHERE owner_id = $1 AND is_trashed = TRUE
-  AND ($2::uuid IS NULL AND parent_folder_id IS NULL OR parent_folder_id = $2)
 """
 DELETE_FILE_BY_ID = """
 DELETE FROM storage.files WHERE id = $1

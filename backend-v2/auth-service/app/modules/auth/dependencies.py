@@ -43,7 +43,7 @@ async def get_current_user(
     revoked_ts = await cache.is_user_revoked(user_id)
     if revoked_ts:
         iat = payload.get("iat", 0)
-        if revoked_ts > iat:
+        if revoked_ts >= iat:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has been revoked.",

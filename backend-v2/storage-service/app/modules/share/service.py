@@ -7,12 +7,20 @@ from app.modules.share import schemas
 from app.core.security import hash_password
 from app.core.config import settings
 import uuid
-import httpx
 
+from app.core.cache import CacheRepository
+from app.core.auth_client import AuthServiceClient
 
 class ShareService:
-    def __init__(self, repo: ShareRepository = Depends()):
+    def __init__(
+        self, 
+        repo: ShareRepository = Depends(),
+        auth_client: AuthServiceClient = Depends(),
+        cache: CacheRepository = Depends()
+    ):
         self.repo = repo
+        self.auth_client = auth_client
+        self.cache = cache
     async def _verify_owner(self, target_id: uuid.UUID, is_file: bool, user_id: uuid.UUID) -> None:
         is_owner = await self.repo.check_is_owner(target_id, is_file, user_id)
         if not is_owner:
@@ -22,12 +30,9 @@ class ShareService:
         await self._verify_owner(request.target_id, request.is_file, owner_id)
         
         # Look up user by email via internal API
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{settings.AUTH_SERVICE_URL}/internal/users/by-email", params={"email": request.email})
-            if resp.status_code == 404:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with this email not found.")
-            resp.raise_for_status()
-            grantee = resp.json()
+        grantee = await self.auth_client.get_user_by_email(request.email)
+        if not grantee:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with this email not found.")
             
         grantee_id = uuid.UUID(grantee['id'])
         if grantee_id == owner_id:
@@ -40,12 +45,9 @@ class ShareService:
     async def revoke_user_share(self, request: schemas.RevokeUserShareRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
         await self._verify_owner(request.target_id, request.is_file, owner_id)
         
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{settings.AUTH_SERVICE_URL}/internal/users/by-email", params={"email": request.email})
-            if resp.status_code == 404:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-            resp.raise_for_status()
-            grantee = resp.json()
+        grantee = await self.auth_client.get_user_by_email(request.email)
+        if not grantee:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
             
         await self.repo.revoke_user_share(request.target_id, request.is_file, uuid.UUID(grantee['id']))
         return schemas.GenericMessageResponse(message="Share revoked successfully")
@@ -88,21 +90,15 @@ class ShareService:
         return schemas.ShareStateResponse(public_link=public_link, users=users)
 
     async def visit_public_link(self, share_token: str, user_id: uuid.UUID) -> dict:
-        from app.core.redis import redis_client
-        import json
-        
-        acl = None
-        if redis_client:
-            cached_acl = await redis_client.get(f"public_link_acl:{share_token}")
-            if cached_acl:
-                acl = json.loads(cached_acl)
-                # Reconstruct UUID fields natively
-                if "id" in acl and acl["id"]:
-                    acl["id"] = uuid.UUID(acl["id"])
-                if "file_id" in acl and acl["file_id"]:
-                    acl["file_id"] = uuid.UUID(acl["file_id"])
-                if "folder_id" in acl and acl["folder_id"]:
-                    acl["folder_id"] = uuid.UUID(acl["folder_id"])
+        acl = await self.cache.get_share_acl(share_token)
+        if acl:
+            # Reconstruct UUID fields natively
+            if "id" in acl and acl["id"]:
+                acl["id"] = uuid.UUID(acl["id"])
+            if "file_id" in acl and acl["file_id"]:
+                acl["file_id"] = uuid.UUID(acl["file_id"])
+            if "folder_id" in acl and acl["folder_id"]:
+                acl["folder_id"] = uuid.UUID(acl["folder_id"])
                     
         if not acl:
             acl_row = await self.repo.get_acl_by_token(share_token)
@@ -110,16 +106,8 @@ class ShareService:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found or revoked.")
             acl = dict(acl_row)
             
-            if redis_client:
-                cache_data = dict(acl)
-                # Serialize UUIDs and datetimes for JSON storage
-                for k, v in cache_data.items():
-                    if isinstance(v, uuid.UUID):
-                        cache_data[k] = str(v)
-                    elif hasattr(v, "isoformat"):
-                        cache_data[k] = v.isoformat()
-                # Cache for 10 minutes to protect against viral traffic bursts
-                await redis_client.set(f"public_link_acl:{share_token}", json.dumps(cache_data), ex=600)
+            # Cache for 10 minutes to protect against viral traffic bursts
+            await self.cache.set_share_acl(share_token, acl, ttl_seconds=600)
         
         await self.repo.upsert_public_link_visitor(user_id, acl['id'])
         

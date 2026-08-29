@@ -184,26 +184,6 @@ async def delete_file(request: Request,
     return await service.delete_file(current_user, file_id)
 
 
-@router.post("/shares", response_model=schemas.ShareResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("100/minute")
-async def share_item(request: Request, 
-    payload: schemas.ShareCreateRequest,
-    current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
-):
-    return await service.share_item(current_user, payload)
-
-
-@router.delete("/shares/{share_id}", response_model=schemas.MessageResponse)
-@limiter.limit("30/minute")
-async def revoke_share(request: Request, 
-    share_id: uuid.UUID,
-    current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
-):
-    return await service.revoke_share(current_user, share_id)
-
-
 @router.delete("/trash/files/{file_id}", response_model=schemas.MessageResponse)
 @limiter.limit("30/minute")
 async def hard_delete_file(request: Request, 

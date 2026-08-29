@@ -1,8 +1,14 @@
 import uuid
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, status, Depends
 from app.core.security import decode_token
+from app.core.cache import CacheRepository
+from app.core.auth_client import AuthServiceClient
 
-async def get_current_user(request: Request) -> dict:
+async def get_current_user(
+    request: Request,
+    auth_client: AuthServiceClient = Depends(AuthServiceClient),
+    cache: CacheRepository = Depends(CacheRepository),
+) -> dict:
     """FastAPI Dependency: Stateless JWT verification."""
     token = request.cookies.get("access_token")
     if not token:
@@ -33,16 +39,14 @@ async def get_current_user(request: Request) -> dict:
             detail="Invalid token subject identifier.",
         )
 
-    # Check Redis for token revocation based on payload['iat']
-    from app.core.redis import redis_client
-    if redis_client:
-        revoked_ts = await redis_client.get(f"revoked:user:{user_id}")
-        if revoked_ts:
-            iat = payload.get("iat", 0)
-            if int(revoked_ts) > iat:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token has been revoked.",
-                )
+    # 4. Check Redis for Token Revocation via Cache abstraction
+    revoked_ts = await cache.get_revoked_token_ts(user_id)
+    if revoked_ts:
+        iat = payload.get("iat", 0)
+        if revoked_ts >= iat:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked.",
+            )
 
     return {"id": user_id}
