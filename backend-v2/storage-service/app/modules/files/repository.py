@@ -16,6 +16,50 @@ AsyncConn = Union[asyncpg.Connection, PoolConnectionProxy]
 from fastapi import Depends
 from app.core.database import get_db_connection
 
+import functools
+from app.core.exceptions import DuplicateRecordError, InvalidOperationError, ItemNotFoundError, QuotaExceededError
+
+from app.core.exceptions import InfrastructureError
+
+def map_db_errors(func):
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except asyncpg.exceptions.UniqueViolationError as e:
+            raise DuplicateRecordError(str(e))
+        except asyncpg.exceptions.ForeignKeyViolationError as e:
+            # Check if it's a missing parent (insert/update) or a restricted child (delete)
+            detail = getattr(e, 'detail', '') or ''
+            if 'is not present in table' in detail:
+                raise ItemNotFoundError(f"Referenced item not found: {str(e)}")
+            elif 'is still referenced from table' in detail:
+                raise InvalidOperationError(f"Cannot delete item as it is still referenced: {str(e)}")
+            else:
+                # Fallback
+                raise InvalidOperationError(str(e))
+        except asyncpg.exceptions.CheckViolationError as e:
+            constraint = getattr(e, 'constraint_name', '') or ''
+            if 'quota' in constraint.lower() or 'storage' in constraint.lower() or 'size' in constraint.lower():
+                raise QuotaExceededError(str(e))
+            else:
+                raise InvalidOperationError(f"Check constraint violated: {str(e)}")
+        except asyncpg.exceptions.DeadlockDetectedError as e:
+            # Deadlocks are transient infrastructure errors.
+            raise InfrastructureError(f"Transient deadlock detected: {str(e)}")
+        except asyncpg.exceptions.RaiseError as e:
+            # Often from PL/pgSQL
+            msg = str(e).lower()
+            if 'quota' in msg or 'storage' in msg or 'exceed' in msg:
+                raise QuotaExceededError(str(e))
+            elif 'not found' in msg:
+                raise ItemNotFoundError(str(e))
+            elif 'duplicate' in msg or 'already exists' in msg:
+                raise DuplicateRecordError(str(e))
+            else:
+                raise InvalidOperationError(str(e))
+    return wrapper
+
 class FileOperationsRepository:
     def __init__(self, conn: asyncpg.Connection = Depends(get_db_connection)):
         self.conn = conn
@@ -23,9 +67,11 @@ class FileOperationsRepository:
     def _row_to_dict(row: asyncpg.Record | None) -> Optional[dict[str, Any]]:
         return dict(row) if row else None
 
+    @map_db_errors
     async def get_storage_usage(self, owner_id: uuid.UUID) -> int:
         return await self.conn.fetchval(queries.GET_STORAGE_USAGE, owner_id) or 0
 
+    @map_db_errors
     async def get_user_storage_quota(self, owner_id: uuid.UUID) -> dict[str, Any]:
         row = await self.conn.fetchrow(queries.GET_USER_STORAGE_QUOTA, owner_id)
         if not row:
@@ -35,43 +81,52 @@ class FileOperationsRepository:
                 row = await self.conn.fetchrow(queries.GET_USER_STORAGE_QUOTA, owner_id)
         return dict(row)
 
+    @map_db_errors
     async def update_user_storage_usage(self, owner_id: uuid.UUID) -> int:
         await self.get_user_storage_quota(owner_id)
         return await self.conn.fetchval(queries.RECALCULATE_USER_STORAGE, owner_id)
 
+    @map_db_errors
     async def check_storage_available(
         self, owner_id: uuid.UUID, requested_bytes: int
     ) -> bool:
         await self.get_user_storage_quota(owner_id)
         return bool(await self.conn.fetchval(queries.CHECK_STORAGE_AVAILABLE, owner_id, requested_bytes))
 
+    @map_db_errors
     async def get_folder_trashed_size(self, folder_path: str) -> int:
         return await self.conn.fetchval(queries.GET_FOLDER_TRASHED_SIZE, folder_path) or 0
 
+    @map_db_errors
     async def recalculate_user_storage(self, owner_id: uuid.UUID) -> int:
         await self.get_user_storage_quota(owner_id)
         return await self.conn.fetchval(queries.RECALCULATE_USER_STORAGE, owner_id) or 0
 
+    @map_db_errors
     async def get_folder_by_id(self, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
         row = await self.conn.fetchrow(queries.GET_FOLDER_BY_ID, folder_id)
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def get_file_by_id(self, file_id: uuid.UUID) -> Optional[dict[str, Any]]:
         row = await self.conn.fetchrow(queries.GET_FILE_BY_ID, file_id)
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def list_user_folders(
         self, owner_id: uuid.UUID, parent_folder_id: uuid.UUID | None = None
     ) -> list[dict[str, Any]]:
         rows = await self.conn.fetch(queries.GET_USER_FOLDERS, owner_id, parent_folder_id)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def list_user_files(
         self, owner_id: uuid.UUID, parent_folder_id: uuid.UUID | None = None
     ) -> list[dict[str, Any]]:
         rows = await self.conn.fetch(queries.GET_USER_FILES, owner_id, parent_folder_id)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def create_folder(
         self,
         owner_id: uuid.UUID,
@@ -83,6 +138,7 @@ class FileOperationsRepository:
             raise RuntimeError("Failed to insert folder row into database.")
         return dict(row)
 
+    @map_db_errors
     async def create_file(
         self,
         file_id: uuid.UUID,
@@ -109,6 +165,7 @@ class FileOperationsRepository:
             raise RuntimeError("Failed to insert file row into database.")
         return dict(row)
 
+    @map_db_errors
     async def move_folder(
         self,
         folder_id: uuid.UUID,
@@ -128,6 +185,7 @@ class FileOperationsRepository:
             json.dumps(file_decisions or {}),
         )
 
+    @map_db_errors
     async def move_file(
         self,
         file_id: uuid.UUID,
@@ -137,6 +195,7 @@ class FileOperationsRepository:
     ) -> None:
         await self.conn.fetchval(queries.CALL_MOVE_FILE, file_id, dest_parent_folder_id, on_collision)
 
+    @map_db_errors
     async def get_folder_by_parent_and_name(
         self,
         parent_folder_id: uuid.UUID | None,
@@ -148,6 +207,7 @@ class FileOperationsRepository:
         )
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def get_file_by_parent_and_name(
         self,
         parent_folder_id: uuid.UUID | None,
@@ -159,18 +219,22 @@ class FileOperationsRepository:
         )
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def trash_folder(self, folder_id: uuid.UUID) -> Optional[dict[str, Any]]:
         row = await self.conn.fetchrow(queries.TRASH_FOLDER, folder_id, datetime.now(timezone.utc))
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def trash_file(self, file_id: uuid.UUID) -> Optional[dict[str, Any]]:
         row = await self.conn.fetchrow(queries.TRASH_FILE, file_id, datetime.now(timezone.utc))
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def get_acl_entry(self, acl_entry_id: uuid.UUID) -> Optional[dict[str, Any]]:
         row = await self.conn.fetchrow(queries.GET_FOLDER_ACL, acl_entry_id)
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def create_acl_entry(
         self,
         *,
@@ -199,6 +263,7 @@ class FileOperationsRepository:
             raise RuntimeError("Failed to insert ACL row into database.")
         return dict(row)
 
+    @map_db_errors
     async def update_acl_entry_permission(
         self,
         acl_entry_id: uuid.UUID,
@@ -211,6 +276,7 @@ class FileOperationsRepository:
         )
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def update_live_public_link(
         self,
         acl_entry_id: uuid.UUID,
@@ -228,6 +294,7 @@ class FileOperationsRepository:
         )
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def revoke_acl_entry(
         self,
         acl_entry_id: uuid.UUID,
@@ -238,6 +305,7 @@ class FileOperationsRepository:
         )
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def get_live_user_share(
         self,
         *,
@@ -253,6 +321,7 @@ class FileOperationsRepository:
         )
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def get_live_public_link(
         self,
         *,
@@ -266,6 +335,7 @@ class FileOperationsRepository:
         )
         return self._row_to_dict(row)
 
+    @map_db_errors
     async def list_trashed_files_before(
         self,
         cutoff: datetime
@@ -275,6 +345,7 @@ class FileOperationsRepository:
             cutoff)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def list_trashed_folders_before(
         self, 
         cutoff: datetime
@@ -284,6 +355,7 @@ class FileOperationsRepository:
             cutoff)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def list_files_by_owner(
         self, 
         owner_id: uuid.UUID
@@ -293,6 +365,7 @@ class FileOperationsRepository:
             owner_id)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def list_files_under_path(
         self, 
         path
@@ -302,6 +375,7 @@ class FileOperationsRepository:
             path)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def list_trashed_files_by_owner(
         self, 
         owner_id: uuid.UUID
@@ -311,6 +385,7 @@ class FileOperationsRepository:
             owner_id)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def list_trashed_folders_by_owner(
         self, 
         owner_id: uuid.UUID
@@ -320,6 +395,7 @@ class FileOperationsRepository:
             owner_id)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def delete_file_by_id(
         self, 
         file_id: uuid.UUID
@@ -329,6 +405,7 @@ class FileOperationsRepository:
             file_id)
         return result == "DELETE 1"
 
+    @map_db_errors
     async def delete_folder_by_id(
         self, 
         folder_id: uuid.UUID
@@ -338,60 +415,70 @@ class FileOperationsRepository:
             folder_id)
         return result == "DELETE 1"
 
+    @map_db_errors
     async def delete_files_under_path(
         self, 
         path
     ) -> None:
         await self.conn.execute(queries.DELETE_FILES_UNDER_PATH, path)
 
+    @map_db_errors
     async def delete_folders_under_path(
         self, 
         path
     ) -> None:
         await self.conn.execute(queries.DELETE_FOLDERS_UNDER_PATH, path)
 
+    @map_db_errors
     async def delete_trashed_files_by_owner(
         self, 
         owner_id: uuid.UUID
     ) -> None:
         await self.conn.execute(queries.DELETE_TRASHED_FILES_BY_OWNER, owner_id)
 
+    @map_db_errors
     async def delete_trashed_folders_by_owner(
         self,
         owner_id: uuid.UUID
     ) -> None:
         await self.conn.execute(queries.DELETE_TRASHED_FOLDERS_BY_OWNER, owner_id)
 
+    @map_db_errors
     async def delete_all_user_data(self, owner_id: uuid.UUID) -> None:
         async with self.conn.transaction():
             await self.conn.execute("DELETE FROM storage.acl_entries WHERE grantee_id = $1", owner_id)
             await self.conn.execute("DELETE FROM storage.files WHERE owner_id = $1", owner_id)
             await self.conn.execute("DELETE FROM storage.folders WHERE owner_id = $1", owner_id)
 
+    @map_db_errors
     async def get_path_for_file(
         self, 
         file_id: uuid.UUID
     ) -> str | None:
         return await self.conn.fetchval(queries.GET_PATH_FOR_FILE, file_id)
 
+    @map_db_errors
     async def get_path_for_folder(
         self,
         folder_id: uuid.UUID
     ) -> str | None:
         return await self.conn.fetchval(queries.GET_PATH_FOR_FOLDER, folder_id)
 
+    @map_db_errors
     async def get_owner_and_trashed_for_file(
         self, 
         file_id: uuid.UUID
     ) -> asyncpg.Record | None:
         return await self.conn.fetchrow(queries.GET_OWNER_AND_TRASHED_FOR_FILE, file_id)
 
+    @map_db_errors
     async def get_owner_and_trashed_for_folder(
         self, 
         folder_id: uuid.UUID
     ) -> asyncpg.Record | None:
         return await self.conn.fetchrow(queries.GET_OWNER_AND_TRASHED_FOR_FOLDER, folder_id)
 
+    @map_db_errors
     async def get_effective_acl(
         self, 
         path: str, 
@@ -402,6 +489,7 @@ class FileOperationsRepository:
         row = await self.conn.fetchrow(queries.GET_EFFECTIVE_ACL, path, is_file, target_id, user_id)
         return dict(row) if row else None
 
+    @map_db_errors
     async def file_exists_by_name(
         self,
         parent_folder_id: uuid.UUID | None,
@@ -419,6 +507,7 @@ class FileOperationsRepository:
         )
         return bool(result)
 
+    @map_db_errors
     async def folder_exists_by_name(
         self,
         parent_folder_id: uuid.UUID | None,
@@ -436,6 +525,7 @@ class FileOperationsRepository:
         )
         return bool(result)
 
+    @map_db_errors
     async def call_lock_naming_scope(
         self,
         parent_folder_id: uuid.UUID | None, 
@@ -443,6 +533,7 @@ class FileOperationsRepository:
     ) -> None:
         await self.conn.fetchval(queries.CALL_LOCK_NAMING_SCOPE, parent_folder_id, owner_id)
 
+    @map_db_errors
     async def resolve_file_name_collision(
         self, 
         parent_folder_id: uuid.UUID | None, 
@@ -450,6 +541,7 @@ class FileOperationsRepository:
     ) -> str | None:
         return await self.conn.fetchval(queries.RESOLVE_FILE_NAME_COLLISION, parent_folder_id, owner_id, file_name)
 
+    @map_db_errors
     async def resolve_restored_file_name(
         self, 
         parent_folder_id: uuid.UUID | None, 
@@ -458,6 +550,7 @@ class FileOperationsRepository:
     ) -> str | None:
         return await self.conn.fetchval(queries.RESOLVE_RESTORED_FILE_NAME, parent_folder_id, owner_id, file_name)
 
+    @map_db_errors
     async def resolve_restored_folder_name(
         self, 
         parent_folder_id: uuid.UUID | None, 
@@ -466,6 +559,7 @@ class FileOperationsRepository:
     ) -> str | None:
         return await self.conn.fetchval(queries.RESOLVE_RESTORED_FOLDER_NAME, parent_folder_id, owner_id, folder_name)
 
+    @map_db_errors
     async def restore_file(
         self, 
         file_id: uuid.UUID, 
@@ -474,6 +568,7 @@ class FileOperationsRepository:
         row = await self.conn.fetchrow(queries.RESTORE_FILE, file_id, new_file_name)
         return dict(row) if row else None
 
+    @map_db_errors
     async def restore_folder(
         self, 
         folder_id: uuid.UUID, 
@@ -482,6 +577,7 @@ class FileOperationsRepository:
         row = await self.conn.fetchrow(queries.RESTORE_FOLDER, folder_id, new_folder_name)
         return dict(row) if row else None
 
+    @map_db_errors
     async def list_shared_with_me_folders(
         self,
         user_id: uuid.UUID
@@ -489,6 +585,7 @@ class FileOperationsRepository:
         rows = await self.conn.fetch(queries.GET_SHARED_WITH_ME_FOLDERS, user_id)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def list_shared_with_me_files(
         self, 
         user_id: uuid.UUID
@@ -496,6 +593,7 @@ class FileOperationsRepository:
         rows = await self.conn.fetch(queries.GET_SHARED_WITH_ME_FILES, user_id)
         return [dict(r) for r in rows]
 
+    @map_db_errors
     async def get_folders_by_ids(
         self, 
         folder_ids: list[uuid.UUID]

@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Any
 from app.modules.auth import queries
+from app.core.exceptions import DuplicateRecordError
 
 from fastapi import Depends
 from app.core.database import get_db_connection
@@ -27,10 +28,13 @@ class AuthRepository:
         hashed_password: str,
         full_name: Optional[str],
     ) -> dict[str, Any]:
-        row = await self.conn.fetchrow(queries.CREATE_USER, email, hashed_password, full_name)
-        if not row:
-            raise RuntimeError("Failed to insert user row into database.")
-        return dict(row)
+        try:
+            row = await self.conn.fetchrow(queries.CREATE_USER, email, hashed_password, full_name)
+            if not row:
+                raise RuntimeError("Failed to insert user row into database.")
+            return dict(row)
+        except asyncpg.exceptions.UniqueViolationError:
+            raise DuplicateRecordError("Email address already registered.")
     
     async def delete_user(self, user_id: uuid.UUID) -> bool:
         """Permanently deletes a user from the database."""

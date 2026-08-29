@@ -2,8 +2,9 @@ import secrets
 import asyncpg
 import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import HTTPException, Depends, status
+from fastapi import Depends
 from app.core.config import settings
+from app.core.exceptions import UserNotFoundError, InvalidCredentialsError
 from app.core.security import hash_password, verify_password, create_token, decode_token
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.cache import CacheRepository
@@ -37,16 +38,10 @@ class AuthService:
     ) -> tuple[schemas.UserResponse, dict]:
         hashed_pwd = hash_password(payload.password)
         
-        try:
-            # Save user using injected repo instance
-            new_user = await self.repo.create_user(
-                payload.email, hashed_pwd, payload.full_name
-            )
-        except asyncpg.exceptions.UniqueViolationError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email address already registered.",
-            )
+        # Save user using injected repo instance
+        new_user = await self.repo.create_user(
+            payload.email, hashed_pwd, payload.full_name
+        )
 
         tokens = self.generate_tokens(str(new_user["id"]))
         return schemas.UserResponse(**new_user), tokens
@@ -57,16 +52,10 @@ class AuthService:
     ) -> tuple[schemas.UserResponse, dict]:
         user = await self.repo.get_by_email(credentials.email)
         if not user or not verify_password(credentials.password, user["hashed_password"]):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password.",
-            )
+            raise InvalidCredentialsError("Invalid email or password.")
 
         if not user.get("is_active", True):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User account is inactive.",
-            )
+            raise InvalidCredentialsError("User account is inactive.")
 
         tokens = self.generate_tokens(str(user["id"]))
         return schemas.UserResponse(**user), tokens
@@ -74,32 +63,20 @@ class AuthService:
     async def refresh_session(self, refresh_token: str) -> tuple[schemas.UserResponse, dict]:
         payload = decode_token(refresh_token)
         if not payload or payload.get("type") != "refresh":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired refresh token.",
-            )
+            raise InvalidCredentialsError("Invalid or expired refresh token.")
         
         sub = payload.get("sub")
         if not sub:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload.",
-            )
+            raise InvalidCredentialsError("Invalid token payload.")
 
         try:
             user_id = uuid.UUID(str(sub))
         except (ValueError, TypeError):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token subject identifier.",
-            )
+            raise InvalidCredentialsError("Invalid token subject identifier.")
 
         user = await self.repo.get_by_id(user_id)
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found.",
-            )
+            raise UserNotFoundError("User not found.")
 
         tokens = self.generate_tokens(str(user["id"]))
         return schemas.UserResponse(**user), tokens
@@ -152,10 +129,7 @@ class AuthService:
     async def reset_password(self, data: schemas.ResetPasswordRequest) -> dict:
         token_record = await self.repo.get_valid_reset_token(data.token)
         if not token_record:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired reset token.",
-            )
+            raise InvalidCredentialsError("Invalid or expired reset token.")
 
         new_hashed_password = hash_password(data.new_password)
         await self.repo.update_password_and_invalidate_token(
@@ -176,14 +150,11 @@ class AuthService:
     ) -> dict:
         current_hashed_password = await self.repo.get_password_by_id(user_id)
         if not current_hashed_password:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+            raise UserNotFoundError("User not found.")
 
         # 1. Verify current password
         if not verify_password(payload.current_password, current_hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Incorrect current password.",
-            )
+            raise InvalidCredentialsError("Incorrect current password.")
 
         # 2. Hash and update new password
         new_hashed = hash_password(payload.new_password)

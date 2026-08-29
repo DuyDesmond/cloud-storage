@@ -10,146 +10,24 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-import asyncpg
 import aioboto3
 from contextlib import asynccontextmanager
 from botocore.exceptions import ClientError
-from fastapi import Depends, HTTPException, UploadFile, status, Request, Header
+from fastapi import Depends, UploadFile, Request, Header, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
+from app.core.object_bucket import R2StorageGateway
+from app.core.hash_reader import HashReader
 from app.core.security import hash_password
 from app.modules.files import schemas
 from app.modules.files.repository import FileOperationsRepository
+from app.core.exceptions import DomainError, ItemNotFoundError, QuotaExceededError, DuplicateRecordError, AccessDeniedError, InvalidOperationError, InfrastructureError
 import logging
 
 logger = logging.getLogger(__name__)
 
-class R2StorageGateway:
-    def __init__(self) -> None:
-        self.endpoint_url = getattr(settings, "R2_ENDPOINT_URL", None)
-        self.access_key = getattr(settings, "R2_ACCESS_KEY_ID", None)
-        self.secret_key = getattr(settings, "R2_SECRET_ACCESS_KEY", None)
-        self.bucket_name = getattr(settings, "R2_BUCKET_NAME", None)
-        self.session = aioboto3.Session()
 
-    @asynccontextmanager
-    async def _get_client(self):
-        if not self.endpoint_url or not self.access_key or not self.secret_key:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Cloudflare R2 storage is not configured.",
-            )
-        async with self.session.client(
-            service_name="s3",
-            endpoint_url=self.endpoint_url,
-            aws_access_key_id=self.access_key,
-            aws_secret_access_key=self.secret_key,
-            region_name="auto",
-        ) as client:
-            yield client
-
-    async def upload_bytes(self, *, object_name: str, data: bytes, content_type: str | None) -> None:
-        stream = io.BytesIO(data)
-        extra_args: dict[str, str] = {}
-        if content_type: extra_args["ContentType"] = content_type
-        try:
-            async with self._get_client() as client:
-                await client.upload_fileobj(
-                    stream,
-                    self.bucket_name,
-                    object_name,
-                    ExtraArgs=extra_args if extra_args else None,
-                )
-        except ClientError as exc:
-            raise HTTPException(status_code=503, detail="Failed to upload file to Cloudflare R2.") from exc
-
-    async def delete_object(self, object_name: str) -> None:
-        if not self.endpoint_url or not self.access_key or not self.secret_key: return
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                async with self._get_client() as client:
-                    await client.delete_object(Bucket=self.bucket_name, Key=object_name)
-                return
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(f"Failed to delete object {object_name}: {e}")
-                    raise HTTPException(status_code=500, detail="Failed to delete file from storage.")
-                await asyncio.sleep(1)
-
-    async def generate_presigned_put_url(self, *, object_name: str, expires_in: int = 3600, content_type: str | None = None, metadata: dict[str, str] | None = None) -> str:
-        params: dict[str, object] = {"Bucket": self.bucket_name, "Key": object_name}
-        if content_type: params["ContentType"] = content_type
-        if metadata: params["Metadata"] = metadata
-        try:
-            async with self._get_client() as client:
-                return await client.generate_presigned_url(ClientMethod="put_object", Params=params, ExpiresIn=expires_in)
-        except ClientError as exc:
-            raise HTTPException(status_code=503, detail="Failed to generate presigned upload URL.") from exc
-
-    async def generate_presigned_get_url(self, *, object_name: str, expires_in: int = 3600) -> str:
-        params = {"Bucket": self.bucket_name, "Key": object_name}
-        try:
-            async with self._get_client() as client:
-                return await client.generate_presigned_url(ClientMethod="get_object", Params=params, ExpiresIn=expires_in)
-        except ClientError as exc:
-            raise HTTPException(status_code=503, detail="Failed to generate presigned download URL.") from exc
-
-    async def generate_presigned_post(self, *, object_name: str, expires_in: int = 3600, content_type: str | None = None, max_file_size: int | None = None) -> dict[str, object]:
-        fields: dict[str, str] = {"key": object_name}
-        conditions: list[object] = []
-        if content_type:
-            conditions.append(["eq", "$Content-Type", content_type])
-            fields["Content-Type"] = content_type
-        if max_file_size is not None:
-            conditions.append(["content-length-range", 0, max_file_size])
-        try:
-            async with self._get_client() as client:
-                return await client.generate_presigned_post(Bucket=self.bucket_name, Key=object_name, Fields=fields if fields else None, Conditions=conditions if conditions else None, ExpiresIn=expires_in)
-        except ClientError as exc:
-            raise HTTPException(status_code=503, detail="Failed to generate presigned POST.") from exc
-
-    async def head_object(self, object_name: str) -> dict[str, Any] | None:
-        try:
-            async with self._get_client() as client:
-                return await client.head_object(Bucket=self.bucket_name, Key=object_name)
-        except ClientError as exc:
-            if str(exc.response.get("Error", {}).get("Code", "")) in ("404", "NoSuchKey", "NotFound"):
-                return None
-            raise HTTPException(status_code=503, detail="Failed to verify storage object.") from exc
-
-    async def create_multipart_upload(self, *, object_name: str, content_type: str | None = None) -> str:
-        kwargs: dict[str, Any] = {"Bucket": self.bucket_name, "Key": object_name}
-        if content_type: kwargs["ContentType"] = content_type
-        try:
-            async with self._get_client() as client:
-                res = await client.create_multipart_upload(**kwargs)
-                return res["UploadId"]
-        except ClientError as exc:
-            raise HTTPException(status_code=503, detail="Failed to initiate multipart upload.") from exc
-
-    async def generate_presigned_part_url(self, *, object_name: str, upload_id: str, part_number: int, expires_in: int = 600) -> str:
-        params = {"Bucket": self.bucket_name, "Key": object_name, "UploadId": upload_id, "PartNumber": part_number}
-        try:
-            async with self._get_client() as client:
-                return await client.generate_presigned_url(ClientMethod="upload_part", Params=params, ExpiresIn=expires_in)
-        except ClientError as exc:
-            raise HTTPException(status_code=503, detail="Failed to generate URL for upload part.") from exc
-
-    async def complete_multipart_upload(self, *, object_name: str, upload_id: str, parts: list[dict[str, Any]]) -> None:
-        try:
-            async with self._get_client() as client:
-                await client.complete_multipart_upload(Bucket=self.bucket_name, Key=object_name, UploadId=upload_id, MultipartUpload={"Parts": parts})
-        except ClientError as exc:
-            raise HTTPException(status_code=503, detail="Failed to complete multipart upload.") from exc
-
-    async def abort_multipart_upload(self, *, object_name: str, upload_id: str) -> None:
-        try:
-            async with self._get_client() as client:
-                await client.abort_multipart_upload(Bucket=self.bucket_name, Key=object_name, UploadId=upload_id)
-        except ClientError:
-            pass
 
 
 def sanitize_filename(filename: str) -> str:
@@ -159,31 +37,7 @@ def sanitize_filename(filename: str) -> str:
 
 
 
-import hashlib
 
-class _HashingReader:
-    def __init__(self, fobj):
-        self._f = fobj
-        self._hasher = hashlib.sha256()
-        self.size = 0
-
-    def read(self, n=-1):
-        chunk = self._f.read(n)
-        if chunk:
-            if isinstance(chunk, str):
-                chunk = chunk.encode()
-            self._hasher.update(chunk)
-            self.size += len(chunk)
-        return chunk
-
-    def hexdigest(self):
-        return self._hasher.hexdigest()
-
-    def seek(self, *args, **kwargs):
-        return getattr(self._f, "seek")(*args, **kwargs)
-
-    def tell(self):
-        return getattr(self._f, "tell")()
 
 
 class FileOperationsService:
@@ -195,10 +49,7 @@ class FileOperationsService:
             new_name = await self.repo.resolve_restored_folder_name(parent_id, owner_id, original_name)
             
         if new_name is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Could not resolve a valid name for the restored {'file' if is_file else 'folder'}."
-            )
+            raise InfrastructureError(f"Could not resolve a valid name for the restored {'file' if is_file else 'folder'}.")
         return new_name
 
     async def _handle_filename_collision(self, parent_folder_id, current_user_id, clean_name, on_collision):
@@ -250,10 +101,7 @@ class FileOperationsService:
         if payload.size_bytes > 0:
             has_space = await self._check_storage_available(current_user["id"], payload.size_bytes)
             if not has_space:
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="Storage quota exceeded.",
-                )
+                raise QuotaExceededError("Storage quota exceeded.",)
 
         clean_name = sanitize_filename(payload.file_name)
         storage_key = f"storage/{current_user['id']}/{uuid.uuid4()}/{clean_name}"
@@ -294,17 +142,11 @@ class FileOperationsService:
 
         user_prefix = f"storage/{current_user['id']}/"
         if not payload.storage_key.startswith(user_prefix):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid storage key for current user.",
-            )
+            raise AccessDeniedError("Invalid storage key for current user.",)
 
         head = await self.storage.head_object(payload.storage_key)
         if head is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Uploaded storage object not found.",
-            )
+            raise InfrastructureError("Uploaded storage object not found.",)
 
         # Enforce quota check before committing to DB
         actual_size = payload.size_bytes
@@ -314,10 +156,7 @@ class FileOperationsService:
         has_space = await self._check_storage_available(current_user["id"], actual_size)
         if not has_space:
             await self.storage.delete_object(payload.storage_key)
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="Storage quota exceeded.",
-            )
+            raise QuotaExceededError("Storage quota exceeded.",)
 
         # If client supplied a checksum, validate against object metadata or ETag
         if payload.content_hash:
@@ -327,15 +166,15 @@ class FileOperationsService:
             if metadata.get("sha256"):
                 if metadata.get("sha256") != payload.content_hash:
                     await self.storage.delete_object(payload.storage_key)
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Checksum mismatch for uploaded object.")
+                    raise InfrastructureError("Checksum mismatch for uploaded object.")
             elif normalized_etag:
                 if normalized_etag != payload.content_hash:
                     await self.storage.delete_object(payload.storage_key)
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Checksum mismatch for uploaded object.")
+                    raise InfrastructureError("Checksum mismatch for uploaded object.")
             else:
                 # No checksum available from storage to validate against
                 await self.storage.delete_object(payload.storage_key)
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to validate checksum for uploaded object.")
+                raise InfrastructureError("Unable to validate checksum for uploaded object.")
 
         clean_name = sanitize_filename(payload.file_name)
 
@@ -380,10 +219,7 @@ class FileOperationsService:
         if payload.size_bytes > 0:
             has_space = await self._check_storage_available(current_user["id"], payload.size_bytes)
             if not has_space:
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="Storage quota exceeded.",
-                )
+                raise QuotaExceededError("Storage quota exceeded.",)
 
         clean_name = sanitize_filename(payload.file_name)
         storage_key = f"storage/{current_user['id']}/{uuid.uuid4()}/{clean_name}"
@@ -406,10 +242,7 @@ class FileOperationsService:
     ) -> schemas.PresignPartResponse:
         user_prefix = f"storage/{current_user['id']}/"
         if not payload.storage_key.startswith(user_prefix):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid storage key for current user.",
-            )
+            raise AccessDeniedError("Invalid storage key for current user.",)
 
         url = await self.storage.generate_presigned_part_url(
             object_name=payload.storage_key,
@@ -431,10 +264,7 @@ class FileOperationsService:
         await self._require_parent_access(payload.parent_folder_id, current_user["id"])
         user_prefix = f"storage/{current_user['id']}/"
         if not payload.storage_key.startswith(user_prefix):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid storage key for current user.",
-            )
+            raise AccessDeniedError("Invalid storage key for current user.",)
 
         if payload.size_bytes > 0:
             has_space = await self._check_storage_available(current_user["id"], payload.size_bytes)
@@ -444,10 +274,7 @@ class FileOperationsService:
                     upload_id=payload.upload_id,
                 )
                 await self.storage.delete_object(payload.storage_key)
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="Storage quota exceeded.",
-                )
+                raise QuotaExceededError("Storage quota exceeded.",)
 
         parts_formatted = []
         for p in payload.parts:
@@ -503,10 +330,7 @@ class FileOperationsService:
     ) -> schemas.MessageResponse:
         user_prefix = f"storage/{current_user['id']}/"
         if not payload.storage_key.startswith(user_prefix):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid storage key for current user.",
-            )
+            raise AccessDeniedError("Invalid storage key for current user.",)
 
         await self.storage.abort_multipart_upload(
             object_name=payload.storage_key,
@@ -520,7 +344,7 @@ class FileOperationsService:
         while True:
             try:
                 return await fn()
-            except (asyncpg.exceptions.DeadlockDetectedError, asyncpg.exceptions.UniqueViolationError) as exc:
+            except (DuplicateRecordError, InvalidOperationError, InfrastructureError):
                 if attempt >= max_attempts:
                     raise
                 delay = base_delay * (2 ** (attempt - 1)) * (1 + random.random())
@@ -542,12 +366,12 @@ class FileOperationsService:
     @staticmethod
     def _require_owner(item: dict[str, Any], current_user_id: uuid.UUID) -> None:
         if item["owner_id"] != current_user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner access required.")
+            raise AccessDeniedError("Owner access required.")
 
     @staticmethod
     def _require_target_live(item: dict[str, Any]) -> None:
         if item["is_trashed"]:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target is trashed.")
+            raise InfrastructureError("Target is trashed.")
 
     async def _require_edit_access(
         self,
@@ -559,19 +383,19 @@ class FileOperationsService:
         is_file = target_type == "file"
         path = await (self.repo.get_path_for_file(target_id) if is_file else self.repo.get_path_for_folder(target_id))
         if not path:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+            raise ItemNotFoundError("Target not found.")
         owner_row = await (self.repo.get_owner_and_trashed_for_file(target_id) if is_file else self.repo.get_owner_and_trashed_for_folder(target_id))
         if not owner_row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+            raise ItemNotFoundError("Target not found.")
 
         if owner_row["owner_id"] == current_user_id:
             if owner_row["is_trashed"]:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target is trashed.")
+                raise InfrastructureError("Target is trashed.")
             return
 
         acl = await self.repo.get_effective_acl(path, is_file, target_id, current_user_id)
         if not acl or not acl.get("permission"):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+            raise AccessDeniedError("Access denied.")
             
         permission = acl["permission"]
         password_hash = acl.get("password_hash")
@@ -579,12 +403,12 @@ class FileOperationsService:
         # Validate password if required
         if password_hash:
             if not self.provided_password:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="PASSWORD_REQUIRED")
+                raise AccessDeniedError("PASSWORD_REQUIRED")
             if hash_password(self.provided_password) != password_hash:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_PASSWORD")
+                raise AccessDeniedError("INVALID_PASSWORD")
 
         if permission != "edit":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Edit access required.")
+            raise AccessDeniedError("Edit access required.")
 
     async def _require_parent_access(
         self,
@@ -613,10 +437,7 @@ class FileOperationsService:
         if on_col is None:
             collision = await self.repo.folder_exists_by_name(payload.parent_folder_id, owner_id, clean_name)
             if collision:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT, 
-                    detail="A folder with that name already exists. Resubmit with on_collision set to 'replace', 'keep_duplicate', or 'merge'."
-                )
+                raise DuplicateRecordError("A folder with that name already exists. Resubmit with on_collision set to 'replace', 'keep_duplicate', or 'merge'.")
 
         async def _perform_operation():
             async with self.repo.conn.transaction():
@@ -646,8 +467,8 @@ class FileOperationsService:
 
         try:
             row = await self._with_db_retry(_perform_operation)
-        except asyncpg.UniqueViolationError:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Folder name already exists.")
+        except DuplicateRecordError:
+            raise DuplicateRecordError("Folder name already exists.")
 
         return self._as_folder_response(row)
 
@@ -666,9 +487,7 @@ class FileOperationsService:
         if on_collision is None:
             collision = await self.repo.file_exists_by_name(parent_folder_id, owner_id, clean_name)
             if collision:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="A file with that name already exists. Resubmit with on_collision set to "
+                raise DuplicateRecordError("A file with that name already exists. Resubmit with on_collision set to "
                     "'replace' (overwrite) or 'keep_duplicate' (add a suffix).",
                 )
 
@@ -682,7 +501,7 @@ class FileOperationsService:
 
         file_id = uuid.uuid4()
         storage_key = f"storage/{current_user['id']}/{file_id}/{clean_name}"
-        reader = _HashingReader(file_obj)
+        reader = HashReader(file_obj)
 
         extra_args: dict[str, str] = {}
         if upload_file.content_type:
@@ -697,21 +516,18 @@ class FileOperationsService:
                 ExtraArgs=extra_args if extra_args else None,
             )
         except ClientError as exc:  # pragma: no cover - external storage failure
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="File storage upload failed.") from exc
-        except HTTPException:
+            raise InfrastructureError("File storage upload failed.")
+        except DomainError:
             raise
         except Exception as exc:  # pragma: no cover
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="File storage upload failed.") from exc
+            raise InfrastructureError("File storage upload failed.")
 
         content_hash = reader.hexdigest() if reader.size > 0 else None
 
         has_space = await self._check_storage_available(current_user["id"], reader.size)
         if not has_space:
             await self.storage.delete_object(storage_key)
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="Storage quota exceeded.",
-            )
+            raise QuotaExceededError("Storage quota exceeded.",)
 
         async def _perform_operation():
             async with self.repo.conn.transaction():
@@ -732,19 +548,13 @@ class FileOperationsService:
 
         try:
             row = await self._with_db_retry(_perform_operation)
-        except asyncpg.UniqueViolationError:
+        except DuplicateRecordError:
             await self.storage.delete_object(storage_key)
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A file with that name already exists. Resubmit with on_collision set to "
-                "'replace' or 'keep_duplicate'.",
-            )
-        except asyncpg.CheckViolationError:
+            raise DuplicateRecordError("A file with that name already exists. Resubmit with on_collision set to "
+                "'replace' or 'keep_duplicate'.",)
+        except QuotaExceededError:
             await self.storage.delete_object(storage_key)
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="Storage quota exceeded.",
-            )
+            raise QuotaExceededError("Storage quota exceeded.",)
         except Exception:
             await self.storage.delete_object(storage_key)
             raise
@@ -760,13 +570,13 @@ class FileOperationsService:
     ) -> schemas.FolderResponse:
         folder = await self.repo.get_folder_by_id(folder_id)
         if not folder:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
+            raise ItemNotFoundError("Folder not found.")
         self._require_owner(folder, current_user["id"])
         self._require_target_live(folder)
         await self._require_parent_access(payload.parent_folder_id, current_user["id"])
 
         if payload.parent_folder_id == folder_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Folder cannot be moved into itself.")
+            raise InfrastructureError("Folder cannot be moved into itself.")
 
         folder_name = folder["folder_name"]
 
@@ -788,19 +598,16 @@ class FileOperationsService:
 
         try:
             row = await self._with_db_retry(_perform_operation)
-        except asyncpg.ForeignKeyViolationError:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination folder not found.")
-        except asyncpg.CheckViolationError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-        except asyncpg.RaiseError:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A folder with that name already exists at the destination. "
-                "Resubmit with on_collision set to 'merge' or 'keep_duplicate'.",
-            )
+        except ItemNotFoundError:
+            raise ItemNotFoundError("Destination folder not found.")
+        except QuotaExceededError:
+            raise InfrastructureError("Not enough storage.")
+        except InvalidOperationError, InfrastructureError:
+            raise DuplicateRecordError("A folder with that name already exists at the destination. "
+                "Resubmit with on_collision set to 'merge' or 'keep_duplicate'.",)
 
         if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found after move.")
+            raise ItemNotFoundError("Folder not found after move.")
         return self._as_folder_response(row)
 
     async def move_file(
@@ -811,7 +618,7 @@ class FileOperationsService:
     ) -> schemas.FileResponse:
         file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+            raise ItemNotFoundError("File not found.")
         self._require_owner(file_row, current_user["id"])
         self._require_target_live(file_row)
         await self._require_parent_access(payload.parent_folder_id, current_user["id"])
@@ -825,17 +632,14 @@ class FileOperationsService:
 
         try:
             row = await self._with_db_retry(_perform_operation)
-        except asyncpg.ForeignKeyViolationError:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination folder not found.")
-        except asyncpg.RaiseError:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A file with that name already exists at the destination. "
-                "Resubmit with on_collision set to 'replace' or 'keep_duplicate'.",
-            )
+        except ItemNotFoundError:
+            raise ItemNotFoundError("Destination folder not found.")
+        except InvalidOperationError, InfrastructureError:
+            raise DuplicateRecordError("A file with that name already exists at the destination. "
+                "Resubmit with on_collision set to 'replace' or 'keep_duplicate'.",)
 
         if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+            raise ItemNotFoundError("File not found.")
         return self._as_file_response(row)
 
     async def delete_folder(
@@ -845,14 +649,14 @@ class FileOperationsService:
     ) -> schemas.MessageResponse:
         folder = await self.repo.get_folder_by_id(folder_id)
         if not folder:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
+            raise ItemNotFoundError("Folder not found.")
         self._require_owner(folder, current_user["id"])
         if folder["is_trashed"]:
             return schemas.MessageResponse(message="Folder already in trash.")
 
         row = await self.repo.trash_folder(folder_id)
         if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
+            raise ItemNotFoundError("Folder not found.")
         await self._recalculate_user_storage(current_user["id"])
         return schemas.MessageResponse(message="Folder moved to trash.")
 
@@ -863,7 +667,7 @@ class FileOperationsService:
     ) -> schemas.FolderResponse:
         folder = await self.repo.get_folder_by_id(folder_id)
         if not folder:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
+            raise ItemNotFoundError("Folder not found.")
         self._require_owner(folder, current_user["id"])
         if not folder["is_trashed"]:
             return self._as_folder_response(folder)
@@ -874,26 +678,17 @@ class FileOperationsService:
         folder_path = folder.get("path")
 
         if not owner_id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Folder record is missing a valid owner ID."
-            )
+            raise InfrastructureError("Folder record is missing a valid owner ID.")
 
         if not folder_name:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Folder name must not be empty."
-            )
+            raise InfrastructureError("Folder name must not be empty.")
 
         if folder_path:
             trashed_size = await self.repo.get_folder_trashed_size(folder_path)
             if trashed_size > 0:
                 has_space = await self._check_storage_available(current_user["id"], trashed_size)
                 if not has_space:
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail="Storage quota exceeded.",
-                    )
+                    raise QuotaExceededError("Storage quota exceeded.",)
 
         async def _perform_operation():
             async with self.repo.conn.transaction():
@@ -902,13 +697,13 @@ class FileOperationsService:
 
         try:
             restored = await self._with_db_retry(_perform_operation)
-        except asyncpg.UniqueViolationError:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Name collision during restore; please retry.")
-        except asyncpg.DeadlockDetectedError:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Deadlock during restore; please retry.")
+        except DuplicateRecordError:
+            raise DuplicateRecordError("Name collision during restore; please retry.")
+        except InvalidOperationError, InfrastructureError:
+            raise DuplicateRecordError("Deadlock during restore; please retry.")
 
         if not restored:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to restore folder.")
+            raise InfrastructureError("Failed to restore folder.")
 
         await self._recalculate_user_storage(current_user["id"])
         return self._as_folder_response(restored)
@@ -920,14 +715,14 @@ class FileOperationsService:
     ) -> schemas.MessageResponse:
         file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+            raise ItemNotFoundError("File not found.")
         self._require_owner(file_row, current_user["id"])
         if file_row["is_trashed"]:
             return schemas.MessageResponse(message="File already in trash.")
 
         row = await self.repo.trash_file(file_id)
         if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+            raise ItemNotFoundError("File not found.")
         await self._recalculate_user_storage(current_user["id"])
         return schemas.MessageResponse(message="File moved to trash.")
 
@@ -938,7 +733,7 @@ class FileOperationsService:
     ) -> schemas.FileResponse:
         file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+            raise ItemNotFoundError("File not found.")
         self._require_owner(file_row, current_user["id"])
         if not file_row["is_trashed"]:
             return self._as_file_response(file_row)
@@ -947,26 +742,17 @@ class FileOperationsService:
         if file_size > 0:
             has_space = await self._check_storage_available(current_user["id"], file_size)
             if not has_space:
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="Storage quota exceeded.",
-                )
+                raise QuotaExceededError("Storage quota exceeded.",)
 
         parent_id = file_row.get("parent_folder_id")
         owner_id = file_row.get("owner_id")
         file_name = file_row.get("file_name")
 
         if not owner_id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="File record is missing a valid owner ID."
-            )
+            raise InfrastructureError("File record is missing a valid owner ID.")
 
         if not file_name:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="File name is missing."
-            )
+            raise InfrastructureError("File name is missing.")
 
         async def _perform_operation():
             async with self.repo.conn.transaction():
@@ -975,13 +761,13 @@ class FileOperationsService:
 
         try:
             restored = await self._with_db_retry(_perform_operation)
-        except asyncpg.UniqueViolationError:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Name collision during restore; please retry.")
-        except asyncpg.DeadlockDetectedError:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Deadlock during restore; please retry.")
+        except DuplicateRecordError:
+            raise DuplicateRecordError("Name collision during restore; please retry.")
+        except InvalidOperationError, InfrastructureError:
+            raise DuplicateRecordError("Deadlock during restore; please retry.")
 
         if not restored:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to restore file.")
+            raise InfrastructureError("Failed to restore file.")
 
         await self._recalculate_user_storage(current_user["id"])
         return self._as_file_response(restored)
@@ -994,10 +780,10 @@ class FileOperationsService:
     ) -> schemas.MessageResponse:
         file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+            raise ItemNotFoundError("File not found.")
         self._require_owner(file_row, current_user["id"])
         if not file_row["is_trashed"]:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is not in trash.")
+            raise InfrastructureError("File is not in trash.")
         storage_key = file_row.get("storage_key")
 
         # If there is an object to delete, attempt it synchronously with retries.
@@ -1013,18 +799,18 @@ class FileOperationsService:
                     await asyncio.sleep(0.5 * attempt)
 
             if last_exc is not None:
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Failed to delete object from storage; please try again later.")
+                raise InfrastructureError("Failed to delete object from storage; please try again later.")
 
         # Object deleted (or no storage_key). Now remove DB row.
         try:
             async with self.repo.conn.transaction():
                 deleted = await self.repo.delete_file_by_id(file_id)
                 if not deleted:
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file row.")
-        except HTTPException:
+                    raise InfrastructureError("Failed to delete file row.")
+        except DomainError:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file row.") from exc
+            raise InfrastructureError("Failed to delete file row.")
 
         await self._recalculate_user_storage(current_user["id"])
         return schemas.MessageResponse(message="File permanently deleted.")
@@ -1036,10 +822,10 @@ class FileOperationsService:
     ) -> schemas.MessageResponse:
         folder = await self.repo.get_folder_by_id(folder_id)
         if not folder:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found.")
+            raise ItemNotFoundError("Folder not found.")
         self._require_owner(folder, current_user["id"])
         if not folder["is_trashed"]:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Folder is not in trash.")
+            raise InfrastructureError("Folder is not in trash.")
 
         folder_path = folder.get("path")
         # gather files under this path
@@ -1061,7 +847,7 @@ class FileOperationsService:
                     await asyncio.sleep(0.5 * attempt)
 
             if last_exc is not None:
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Failed to delete object {storage_key}; please try again later.")
+                raise InfrastructureError(f"Failed to delete object {storage_key}; please try again later.")
 
         # All object deletions succeeded (or no storage_key). Delete folder rows and files under path atomically.
         try:
@@ -1069,7 +855,7 @@ class FileOperationsService:
                 await self.repo.delete_files_under_path(folder_path)
                 await self.repo.delete_folders_under_path(folder_path)
         except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete folder rows.") from exc
+            raise InfrastructureError("Failed to delete folder rows.")
 
         await self._recalculate_user_storage(current_user["id"])
         return schemas.MessageResponse(message="Folder and contents permanently deleted.")
@@ -1096,7 +882,7 @@ class FileOperationsService:
 
                 if last_exc is not None:
                     # stop and return error; do not remove DB rows for failed objects
-                    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Failed to delete object {storage_key}; please try again later.")
+                    raise InfrastructureError(f"Failed to delete object {storage_key}; please try again later.")
 
             # delete DB row for this file
             try:
@@ -1122,28 +908,28 @@ class FileOperationsService:
         is_file = target_type == "file"
         path = await (self.repo.get_path_for_file(target_id) if is_file else self.repo.get_path_for_folder(target_id))
         if not path:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+            raise ItemNotFoundError("Target not found.")
         owner_row = await (self.repo.get_owner_and_trashed_for_file(target_id) if is_file else self.repo.get_owner_and_trashed_for_folder(target_id))
         if not owner_row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+            raise ItemNotFoundError("Target not found.")
 
         if owner_row["owner_id"] == current_user_id:
             if owner_row["is_trashed"]:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target is trashed.")
+                raise InfrastructureError("Target is trashed.")
             return
 
         acl = await self.repo.get_effective_acl(path, is_file, target_id, current_user_id)
         if not acl or not acl.get("permission"):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="View permission required.")
+            raise AccessDeniedError("View permission required.")
 
         permission = acl["permission"]
         password_hash = acl.get("password_hash")
         
         if password_hash:
             if not self.provided_password:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="PASSWORD_REQUIRED")
+                raise AccessDeniedError("PASSWORD_REQUIRED")
             if hash_password(self.provided_password) != password_hash:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_PASSWORD")
+                raise AccessDeniedError("INVALID_PASSWORD")
 
     async def download_file_stream(
         self,
@@ -1153,13 +939,13 @@ class FileOperationsService:
     ) -> StreamingResponse:
         file_row = await self.repo.get_file_by_id(file_id)
         if not file_row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
+            raise ItemNotFoundError("File not found.")
         await self._require_view_access(target_type="file", target_id=file_id, current_user_id=current_user["id"])
 
         # Fetch headers via head_object first to build StreamingResponse headers
         head_res = await self.storage.head_object(file_row["storage_key"])
         if not head_res:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found in storage.")
+            raise ItemNotFoundError("Object not found in storage.")
 
         headers: dict[str, str] = {}
         if "ContentLength" in head_res:

@@ -3,6 +3,7 @@ from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.service import AuthService
 from app.modules.auth import schemas
 from app.core.rate_limit import limiter
+from app.core.exceptions import DuplicateRecordError, InvalidCredentialsError, UserNotFoundError
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -32,7 +33,10 @@ async def register(
     response: Response,
     auth_service: AuthService = Depends(AuthService),
 ):
-    user, tokens = await auth_service.register_user(payload)
+    try:
+        user, tokens = await auth_service.register_user(payload)
+    except DuplicateRecordError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     set_auth_cookies(response, tokens)
     return user
 
@@ -44,7 +48,10 @@ async def login(
     response: Response,
     auth_service: AuthService = Depends(AuthService),
 ):
-    user, tokens = await auth_service.login_user(payload)
+    try:
+        user, tokens = await auth_service.login_user(payload)
+    except InvalidCredentialsError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     set_auth_cookies(response, tokens)
     return user
 
@@ -59,7 +66,12 @@ async def refresh(
     refresh_token = request.cookies.get("refresh_token")
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-    user, tokens = await auth_service.refresh_session(refresh_token)
+    try:
+        user, tokens = await auth_service.refresh_session(refresh_token)
+    except InvalidCredentialsError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+    except UserNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     set_auth_cookies(response, tokens)
     return user
 
@@ -117,7 +129,10 @@ async def reset_password(
     auth_service: AuthService = Depends(AuthService),
 ):
     """Resets user password using a valid reset token."""
-    return await auth_service.reset_password(payload)
+    try:
+        return await auth_service.reset_password(payload)
+    except InvalidCredentialsError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.put("/change-password", response_model=schemas.MessageResponse)
 @limiter.limit("10/minute")
@@ -128,4 +143,9 @@ async def change_password(
     auth_service: AuthService = Depends(AuthService),
 ):
     """Protected endpoint: Allows logged-in users to update their password."""
-    return await auth_service.change_password(current_user["id"], payload)
+    try:
+        return await auth_service.change_password(current_user["id"], payload)
+    except UserNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except InvalidCredentialsError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
