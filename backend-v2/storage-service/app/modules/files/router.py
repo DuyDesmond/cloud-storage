@@ -10,7 +10,13 @@ from app.core.rate_limit import limiter
 from app.core.database import get_db_connection
 from app.core.dependencies import get_current_user
 from app.modules.files import schemas
-from app.modules.files.service import FileOperationsService
+from app.modules.files.services import (
+    FileQueryService,
+    FileUploadService,
+    StorageQuotaService,
+    FileManagementService,
+    TrashService
+)
 
 import functools
 from fastapi import HTTPException, status
@@ -47,7 +53,7 @@ router = APIRouter(prefix="/storage", tags=["File Operations"])
 async def get_storage_contents(request: Request, 
     parent_folder_id: uuid.UUID | None = None,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileQueryService = Depends(FileQueryService),
 ):
     return await service.get_storage_contents(current_user, parent_folder_id)
 
@@ -56,7 +62,7 @@ async def get_storage_contents(request: Request,
 @map_domain_exceptions
 async def get_shared_with_me_contents(request: Request, 
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileQueryService = Depends(FileQueryService),
 ):
     return await service.get_shared_with_me_contents(current_user)
 
@@ -67,7 +73,7 @@ async def get_breadcrumbs(request: Request,
     target_id: uuid.UUID,
     is_file: bool = False,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileQueryService = Depends(FileQueryService),
 ):
     breadcrumbs = await service.get_breadcrumbs(target_id, is_file)
     return schemas.BreadcrumbsResponse(breadcrumbs=breadcrumbs)
@@ -77,7 +83,7 @@ async def get_breadcrumbs(request: Request,
 @map_domain_exceptions
 async def get_storage_usage(request: Request, 
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: StorageQuotaService = Depends(StorageQuotaService),
 ):
     return await service.get_storage_usage(current_user)
 
@@ -87,7 +93,7 @@ async def get_storage_usage(request: Request,
 async def create_folder(request: Request, 
     payload: schemas.FolderCreateRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileManagementService = Depends(FileManagementService),
 ):
     return await service.create_folder(current_user, payload)
 
@@ -100,7 +106,7 @@ async def upload_file(request: Request,
     on_collision: Literal["replace", "keep_duplicate"] | None = "keep_duplicate",
     upload_file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileUploadService = Depends(FileUploadService),
 ):
     return await service.upload_file(current_user, parent_folder_id, upload_file, on_collision)
 
@@ -110,7 +116,7 @@ async def upload_file(request: Request,
 async def request_presigned_upload(request: Request, 
     payload: schemas.PresignedUploadRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileUploadService = Depends(FileUploadService),
 ):
     return await service.request_presigned_upload(current_user, payload)
 
@@ -121,7 +127,7 @@ async def request_presigned_upload(request: Request,
 async def complete_direct_upload(request: Request, 
     payload: schemas.CompleteUploadRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileUploadService = Depends(FileUploadService),
 ):
     return await service.complete_direct_upload(current_user, payload)
 
@@ -132,7 +138,7 @@ async def complete_direct_upload(request: Request,
 async def initiate_multipart_upload(request: Request, 
     payload: schemas.InitiateMultipartUploadRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileUploadService = Depends(FileUploadService),
 ):
     return await service.initiate_multipart_upload(current_user, payload)
 
@@ -143,7 +149,7 @@ async def initiate_multipart_upload(request: Request,
 async def presign_multipart_part(request: Request, 
     payload: schemas.PresignPartRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileUploadService = Depends(FileUploadService),
 ):
     return await service.presign_multipart_part(current_user, payload)
 
@@ -154,7 +160,7 @@ async def presign_multipart_part(request: Request,
 async def complete_multipart_upload(request: Request, 
     payload: schemas.CompleteMultipartUploadRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileUploadService = Depends(FileUploadService),
 ):
     return await service.complete_multipart_upload(current_user, payload)
 
@@ -165,7 +171,7 @@ async def complete_multipart_upload(request: Request,
 async def abort_multipart_upload(request: Request, 
     payload: schemas.AbortMultipartUploadRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileUploadService = Depends(FileUploadService),
 ):
     return await service.abort_multipart_upload(current_user, payload)
 
@@ -175,7 +181,7 @@ async def abort_multipart_upload(request: Request,
 async def download_file(request: Request, 
     file_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileUploadService = Depends(FileUploadService),
 ):
     range_header = request.headers.get("range") or request.headers.get("Range")
     return await service.download_file_stream(current_user, file_id, range_header)
@@ -188,7 +194,7 @@ async def move_folder(request: Request,
     folder_id: uuid.UUID,
     payload: schemas.FolderMoveRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileManagementService = Depends(FileManagementService),
 ):
     return await service.move_folder(current_user, folder_id, payload)
 
@@ -200,7 +206,7 @@ async def move_file(request: Request,
     file_id: uuid.UUID,
     payload: schemas.FileMoveRequest,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileManagementService = Depends(FileManagementService),
 ):
     return await service.move_file(current_user, file_id, payload)
 
@@ -211,7 +217,7 @@ async def move_file(request: Request,
 async def delete_folder(request: Request, 
     folder_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileManagementService = Depends(FileManagementService),
 ):
     return await service.delete_folder(current_user, folder_id)
 
@@ -222,7 +228,7 @@ async def delete_folder(request: Request,
 async def delete_file(request: Request, 
     file_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: FileManagementService = Depends(FileManagementService),
 ):
     return await service.delete_file(current_user, file_id)
 
@@ -233,7 +239,7 @@ async def delete_file(request: Request,
 async def hard_delete_file(request: Request, 
     file_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: TrashService = Depends(TrashService),
 ):
     return await service.hard_delete_file(current_user, file_id)
 
@@ -244,7 +250,7 @@ async def hard_delete_file(request: Request,
 async def hard_delete_folder(request: Request, 
     folder_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: TrashService = Depends(TrashService),
 ):
     return await service.hard_delete_folder(current_user, folder_id)
 
@@ -254,7 +260,7 @@ async def hard_delete_folder(request: Request,
 @map_domain_exceptions
 async def empty_trash(request: Request, 
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: TrashService = Depends(TrashService),
 ):
     return await service.hard_delete_all_trash(current_user)
 
@@ -265,7 +271,7 @@ async def empty_trash(request: Request,
 async def restore_file(request: Request, 
     file_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: TrashService = Depends(TrashService),
 ):
     return await service.restore_file(current_user, file_id)
 
@@ -276,7 +282,7 @@ async def restore_file(request: Request,
 async def restore_folder(request: Request, 
     folder_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: TrashService = Depends(TrashService),
 ):
     return await service.restore_folder(current_user, folder_id)
 
@@ -286,6 +292,6 @@ async def restore_folder(request: Request,
 @map_domain_exceptions
 async def get_trashed_contents(request: Request, 
     current_user: dict = Depends(get_current_user),
-    service: FileOperationsService = Depends(FileOperationsService),
+    service: TrashService = Depends(TrashService),
 ):
     return await service.get_trashed_contents(current_user)

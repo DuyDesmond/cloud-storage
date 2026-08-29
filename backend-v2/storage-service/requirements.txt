@@ -17,3 +17,4 @@ python-multipart
 slowapi
 redis
 aioboto3
+tenacity

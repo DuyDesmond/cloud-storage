@@ -94,10 +94,7 @@ class AuthService:
     async def delete_account(self, user_id: uuid.UUID) -> dict:
         deleted = await self.repo.delete_user(user_id)
         if not deleted:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found.",
-            )
+            raise UserNotFoundError("User not found.")
 
         # Publish UserDeletedEvent to Redis
         await self.cache.publish_user_deleted(str(user_id))

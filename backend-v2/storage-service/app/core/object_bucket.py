@@ -11,7 +11,25 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-class R2StorageGateway:
+from abc import ABC, abstractmethod
+
+class StorageGateway(ABC):
+    @abstractmethod
+    async def upload_bytes(self, *, object_name: str, data: bytes, content_type: str | None) -> None: pass
+
+    @abstractmethod
+    async def delete_object(self, object_name: str) -> None: pass
+
+    @abstractmethod
+    async def generate_presigned_put_url(self, *, object_name: str, expires_in: int = 3600, content_type: str | None = None, metadata: dict[str, str] | None = None) -> str: pass
+
+    @abstractmethod
+    async def generate_presigned_get_url(self, *, object_name: str, expires_in: int = 3600) -> str: pass
+
+    @abstractmethod
+    async def head_object(self, object_name: str) -> dict[str, Any] | None: pass
+
+class R2StorageGateway(StorageGateway):
     def __init__(self) -> None:
         self.endpoint_url = getattr(settings, "R2_ENDPOINT_URL", None)
         self.access_key = getattr(settings, "R2_ACCESS_KEY_ID", None)

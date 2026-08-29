@@ -11,14 +11,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
 from app.core import database
-from app.modules.files.repository import FileOperationsRepository
-from app.modules.files.service import R2StorageGateway
+from app.modules.files.repositories.trash_repository import TrashRepository
+from app.modules.files.repositories.file_query_repository import FileQueryRepository
+from app.core.object_bucket import R2StorageGateway, StorageGateway
 
 logger = logging.getLogger("purge_trashed")
 RETENTION_DAYS = int(os.getenv("TRASH_RETENTION_DAYS", "20"))
 
 
-async def _delete_r2_object_with_retry(storage: R2StorageGateway, storage_key: str, max_retries: int = 3) -> bool:
+async def _delete_r2_object_with_retry(storage: StorageGateway, storage_key: str, max_retries: int = 3) -> bool:
     """Helper to handle Cloudflare R2 object deletion with exponential backoff retries."""
     for attempt in range(1, max_retries + 1):
         try:
@@ -46,10 +47,11 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
     logger.info(f"Starting purge job for items trashed before {cutoff.isoformat()} ({retention_days} days retention)")
 
     async with database.pool.acquire() as conn:
-        repo = FileOperationsRepository(conn)
+        trash_repo = TrashRepository(conn)
+        query_repo = FileQueryRepository(conn)
         
         # 1. Purge individual trashed files
-        files = await repo.list_trashed_files_before(cutoff)
+        files = await trash_repo.list_trashed_files_before(cutoff)
         logger.info(f"Found {len(files)} trashed files eligible for hard-delete.")
 
         for f in files:
@@ -64,14 +66,14 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
 
             # Isolated short transaction per DB deletion
             async with conn.transaction():
-                deleted = await repo.delete_file_by_id(file_id)
+                deleted = await trash_repo.delete_file_by_id(file_id)
                 if deleted:
                     logger.info(f"Purged DB record for file {file_id}")
                 else:
                     logger.warning(f"No DB record found to delete for file {file_id}")
 
         # 2. Purge trashed Folders + child
-        folders = await repo.list_trashed_folders_before(cutoff)
+        folders = await trash_repo.list_trashed_folders_before(cutoff)
         logger.info(f"Found {len(folders)} trashed folders eligible for hard-delete.")
 
         for fld in folders:
@@ -81,7 +83,7 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
             if not folder_path:
                 continue
 
-            files_under = await repo.list_files_under_path(folder_path)
+            files_under = await query_repo.list_files_under_path(folder_path)
             skip_folder = False
 
             # Delete physical storage for all child files in folder hierarchy
@@ -101,8 +103,8 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
 
             # Remove directory hierarchy records in a single transactional unit
             async with conn.transaction():
-                await repo.delete_files_under_path(folder_path)
-                await repo.delete_folders_under_path(folder_path)
+                await trash_repo.delete_files_under_path(folder_path)
+                await trash_repo.delete_folders_under_path(folder_path)
                 logger.info(f"Purged folder {folder_id} and all nested contents from DB")
 
 

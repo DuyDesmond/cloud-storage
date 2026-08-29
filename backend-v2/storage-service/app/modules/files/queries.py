@@ -386,6 +386,21 @@ WHERE is_trashed = FALSE
   )
 """
 
+GET_FOLDERS_BY_PARENT = """
+SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
+FROM storage.folders
+WHERE parent_folder_id = $1 AND is_trashed = FALSE
+ORDER BY folder_name ASC
+"""
+
+GET_FILES_BY_PARENT = """
+SELECT id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_type, content_hash,
+       path, is_trashed, trashed_at, created_at, updated_at
+FROM storage.files
+WHERE parent_folder_id = $1 AND is_trashed = FALSE
+ORDER BY file_name ASC
+"""
+
 GET_SHARED_WITH_ME_FOLDERS = """
 SELECT f.id, f.owner_id, f.parent_folder_id, f.folder_name, f.path, f.is_trashed, f.trashed_at, f.created_at, f.updated_at
 FROM storage.folders f

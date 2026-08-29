@@ -105,7 +105,10 @@ async def delete_me(
     auth_service: AuthService = Depends(AuthService),
 ):
     """Protected endpoint: Permanently deletes current user account."""
-    res = await auth_service.delete_account(current_user["id"])
+    try:
+        res = await auth_service.delete_account(current_user["id"])
+    except UserNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     response.delete_cookie(key="access_token", httponly=True, secure=True, samesite="lax")
     response.delete_cookie(key="refresh_token", httponly=True, secure=True, samesite="lax")
     return res
