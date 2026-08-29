@@ -13,8 +13,6 @@ describe('AuthService', () => {
     id: '123',
     email: 'test@example.com',
     full_name: 'Test User',
-    storage_used: 0,
-    storage_quota: 1000,
     created_at: new Date().toISOString()
   };
 

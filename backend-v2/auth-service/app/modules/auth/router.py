@@ -1,6 +1,4 @@
-import asyncpg
 from fastapi import APIRouter, Depends, Request, Response, status, HTTPException
-from app.core.database import get_db_connection
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.service import AuthService
 from app.modules.auth import schemas

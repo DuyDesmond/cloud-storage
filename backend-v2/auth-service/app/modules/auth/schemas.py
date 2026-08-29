@@ -17,8 +17,6 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: EmailStr
     full_name: str | None
-    storage_used: int
-    storage_quota: int
     created_at: datetime
 
 

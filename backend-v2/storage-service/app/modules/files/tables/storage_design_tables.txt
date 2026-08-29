@@ -59,6 +59,13 @@ END $$;
 
 CREATE SCHEMA IF NOT EXISTS storage;
 
+CREATE TABLE IF NOT EXISTS storage.user_quotas (
+    user_id UUID PRIMARY KEY,
+    storage_used BIGINT NOT NULL DEFAULT 0,
+    storage_quota BIGINT NOT NULL DEFAULT 21474836480, -- 20GB default
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
 -- ============================================================================
 -- 1. FOLDERS TABLE
 -- ============================================================================
@@ -1513,19 +1520,19 @@ CREATE OR REPLACE FUNCTION storage.sync_storage_usage() RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
         IF NOT NEW.is_trashed THEN
-            UPDATE auth.users SET storage_used = storage_used + NEW.size_bytes WHERE id = NEW.owner_id;
+            UPDATE storage.user_quotas SET storage_used = storage_used + NEW.size_bytes WHERE user_id = NEW.owner_id;
         END IF;
 
     ELSIF TG_OP = 'UPDATE' THEN
         IF OLD.is_trashed = FALSE AND NEW.is_trashed = TRUE THEN
-            UPDATE auth.users SET storage_used = storage_used - OLD.size_bytes WHERE id = OLD.owner_id;
+            UPDATE storage.user_quotas SET storage_used = storage_used - OLD.size_bytes WHERE user_id = OLD.owner_id;
         ELSIF OLD.is_trashed = TRUE AND NEW.is_trashed = FALSE THEN
-            UPDATE auth.users SET storage_used = storage_used + NEW.size_bytes WHERE id = NEW.owner_id;
+            UPDATE storage.user_quotas SET storage_used = storage_used + NEW.size_bytes WHERE user_id = NEW.owner_id;
         END IF;
 
     ELSIF TG_OP = 'DELETE' THEN
         IF NOT OLD.is_trashed THEN
-            UPDATE auth.users SET storage_used = storage_used - OLD.size_bytes WHERE id = OLD.owner_id;
+            UPDATE storage.user_quotas SET storage_used = storage_used - OLD.size_bytes WHERE user_id = OLD.owner_id;
         END IF;
     END IF;
 
@@ -1545,7 +1552,9 @@ CREATE TRIGGER trg_sync_storage_usage
 -- DROP IF EXISTS first so this migration is safely re-runnable (Postgres has
 -- no ADD CONSTRAINT IF NOT EXISTS).
 ALTER TABLE auth.users DROP CONSTRAINT IF EXISTS check_storage_within_quota;
-ALTER TABLE auth.users
+
+ALTER TABLE storage.user_quotas DROP CONSTRAINT IF EXISTS check_storage_within_quota;
+ALTER TABLE storage.user_quotas
     ADD CONSTRAINT check_storage_within_quota
     CHECK (storage_used <= storage_quota) NOT VALID;
-ALTER TABLE auth.users VALIDATE CONSTRAINT check_storage_within_quota;
+ALTER TABLE storage.user_quotas VALIDATE CONSTRAINT check_storage_within_quota;

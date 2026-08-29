@@ -11,8 +11,6 @@ class UserModel:
     full_name: str | None
     is_active: bool
     is_superuser: bool
-    storage_used: int
-    storage_quota: int
     token_version: int
     created_at: datetime
     updated_at: datetime
@@ -27,8 +25,6 @@ class UserModel:
             full_name=row.get("full_name"),
             is_active=row["is_active"],
             is_superuser=row["is_superuser"],
-            storage_used=row["storage_used"],
-            storage_quota=row["storage_quota"],
             token_version=row.get("token_version", 1),
             created_at=row["created_at"],
             updated_at=row["updated_at"]
@@ -44,8 +40,6 @@ CREATE TABLE IF NOT EXISTS auth.users (
     hashed_password VARCHAR(255) NOT NULL,
     is_active BOOLEAN DEFAULT TRUE NOT NULL,
     is_superuser BOOLEAN DEFAULT FALSE NOT NULL,
-    storage_used BIGINT DEFAULT 0 NOT NULL,
-    storage_quota BIGINT DEFAULT 21474836480 NOT NULL, -- 20GB default
     token_version INT DEFAULT 1 NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL

@@ -79,6 +79,3 @@ class AuthRepository:
     
     async def update_password(self, user_id: uuid.UUID, new_hashed_password: str) -> None:
         await self.conn.execute(queries.UPDATE_USER_PASSWORD, new_hashed_password, user_id)
-
-    async def update_user_storage(self, user_id: uuid.UUID, storage_used: int) -> None:
-        await self.conn.execute(queries.UPDATE_USER_STORAGE, storage_used, user_id)

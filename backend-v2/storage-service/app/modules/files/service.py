@@ -21,7 +21,6 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.modules.files import schemas
 from app.modules.files.repository import FileOperationsRepository
-from app.core.auth_client import AuthServiceClient
 import logging
 
 logger = logging.getLogger(__name__)
@@ -217,30 +216,22 @@ class FileOperationsService:
         return clean_name
 
     async def _check_storage_available(self, owner_id, size: int) -> bool:
-        resp_json = await self.auth_client.get_user_storage(owner_id)
-        quota = resp_json["storage_quota"]
-        
-        usage = await self.repo.get_storage_usage(owner_id)
-        if quota is None: return True
-        return (usage + size) <= quota
+        return await self.repo.check_storage_available(owner_id, size)
 
     async def _recalculate_user_storage(self, owner_id) -> None:
-        usage = await self.repo.get_storage_usage(owner_id)
-        await self.auth_client.update_user_storage(owner_id, usage)
+        await self.repo.update_user_storage_usage(owner_id)
 
     async def _get_user_storage_quota(self, owner_id) -> dict:
-        return await self.auth_client.get_user_storage(owner_id)
+        return await self.repo.get_user_storage_quota(owner_id)
 
     def __init__(
         self,
         repo: FileOperationsRepository = Depends(),
         storage: R2StorageGateway = Depends(),
-        auth_client: AuthServiceClient = Depends(),
         x_share_password: str | None = Header(default=None, alias="X-Share-Password"),
     ) -> None:
         self.repo = repo
         self.storage = storage
-        self.auth_client = auth_client
         self.provided_password = x_share_password
 
     async def request_presigned_upload(

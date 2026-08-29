@@ -16,11 +16,17 @@ FROM storage.files
 WHERE owner_id = $1 AND is_trashed = FALSE
 """
 
-# Check current usage and limit
 GET_USER_STORAGE_QUOTA = """
     SELECT storage_used, storage_quota
-    FROM storage.users
-    WHERE id = $1
+    FROM storage.user_quotas
+    WHERE user_id = $1
+"""
+
+CREATE_USER_QUOTA = """
+    INSERT INTO storage.user_quotas (user_id)
+    VALUES ($1)
+    ON CONFLICT (user_id) DO NOTHING
+    RETURNING storage_used, storage_quota
 """
 
 CHECK_STORAGE_AVAILABLE = """
@@ -31,8 +37,8 @@ CHECK_STORAGE_AVAILABLE = """
             WHERE owner_id = $1 AND is_trashed = FALSE
         ), 0) + $2
     ) <= COALESCE(storage_quota, 21474836480) AS has_space
-    FROM storage.users
-    WHERE id = $1
+    FROM storage.user_quotas
+    WHERE user_id = $1
 """
 
 GET_FOLDER_TRASHED_SIZE = """
@@ -42,14 +48,14 @@ GET_FOLDER_TRASHED_SIZE = """
 """
 
 RECALCULATE_USER_STORAGE = """
-    UPDATE storage.users
+    UPDATE storage.user_quotas
     SET storage_used = COALESCE((
         SELECT SUM(size_bytes)
         FROM storage.files
         WHERE owner_id = $1 AND is_trashed = FALSE
     ), 0),
     updated_at = CURRENT_TIMESTAMP
-    WHERE id = $1
+    WHERE user_id = $1
     RETURNING storage_used;
 """
 
@@ -232,16 +238,22 @@ WHERE path <@ $1
 """
 
 GET_ALL_TRASHED_FILES_BY_OWNER = """
-SELECT id, owner_id, parent_folder_id, storage_key, file_name, size_bytes, mime_type, content_hash,
-       path, is_trashed, trashed_at, created_at, updated_at
-FROM storage.files
-WHERE owner_id = $1 AND is_trashed = TRUE
+SELECT f.id, f.owner_id, f.parent_folder_id, f.storage_key, f.file_name, f.size_bytes, f.mime_type, f.content_hash,
+       f.path, f.is_trashed, f.trashed_at, f.created_at, f.updated_at
+FROM storage.files f
+LEFT JOIN storage.folders p ON f.parent_folder_id = p.id
+WHERE f.owner_id = $1 
+  AND f.is_trashed = TRUE
+  AND (f.parent_folder_id IS NULL OR p.is_trashed = FALSE)
 """
 
 GET_ALL_TRASHED_FOLDERS_BY_OWNER = """
-SELECT id, owner_id, parent_folder_id, folder_name, path, is_trashed, trashed_at, created_at, updated_at
-FROM storage.folders
-WHERE owner_id = $1 AND is_trashed = TRUE
+SELECT f.id, f.owner_id, f.parent_folder_id, f.folder_name, f.path, f.is_trashed, f.trashed_at, f.created_at, f.updated_at
+FROM storage.folders f
+LEFT JOIN storage.folders p ON f.parent_folder_id = p.id
+WHERE f.owner_id = $1 
+  AND f.is_trashed = TRUE
+  AND (f.parent_folder_id IS NULL OR p.is_trashed = FALSE)
 """
 DELETE_FILE_BY_ID = """
 DELETE FROM storage.files WHERE id = $1

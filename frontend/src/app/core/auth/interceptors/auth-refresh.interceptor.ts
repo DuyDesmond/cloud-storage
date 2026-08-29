@@ -14,15 +14,13 @@ import {
 } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 import { AUTH_ENDPOINTS } from '../endpoints/auth-endpoints';
+import { TokenRefreshStateService } from '../services/token-refresh-state.service';
 
 const REFRESH_URL = AUTH_ENDPOINTS.refresh;
 
-// State tracking for concurrent 401 handling
-let isRefreshing = false;
-const refreshTokenSubject = new BehaviorSubject<boolean | null>(null);
-
 export const authRefreshInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
+  const state = inject(TokenRefreshStateService);
 
   return next(req).pipe(
     catchError((err: any) => {
@@ -34,13 +32,13 @@ export const authRefreshInterceptor: HttpInterceptorFn = (req, next) => {
         !isRefreshRequest &&
         !req.headers.has('x-retried')
       ) {
-        return handle401Error(req, next, auth);
+        return handle401Error(req, next, auth, state);
       }
 
       // If the refresh call ITSELF failed with 401, logout and break the loop
       if (err?.status === 401 && isRefreshRequest) {
-        isRefreshing = false;
-        refreshTokenSubject.next(false);
+        state.isRefreshing = false;
+        state.refreshTokenSubject.next(false);
         auth.logout(); // Redirect to login cleanly instead of looping
       }
 
@@ -53,15 +51,16 @@ function handle401Error(
   req: HttpRequest<unknown>,
   next: HttpHandlerFn,
   auth: AuthService,
+  state: TokenRefreshStateService
 ) {
-  if (!isRefreshing) {
-    isRefreshing = true;
-    refreshTokenSubject.next(null);
+  if (!state.isRefreshing) {
+    state.isRefreshing = true;
+    state.refreshTokenSubject.next(null);
 
     return auth.refresh().pipe(
       switchMap(() => {
-        isRefreshing = false;
-        refreshTokenSubject.next(true);
+        state.isRefreshing = false;
+        state.refreshTokenSubject.next(true);
 
         const retryReq = req.clone({
           headers: req.headers.set('x-retried', '1'),
@@ -69,15 +68,15 @@ function handle401Error(
         return next(retryReq);
       }),
       catchError((refreshErr) => {
-        isRefreshing = false;
-        refreshTokenSubject.next(false);
+        state.isRefreshing = false;
+        state.refreshTokenSubject.next(false);
         auth.logout();
         return throwError(() => refreshErr);
       }),
     );
   } else {
     // If a refresh is ALREADY in progress, queue subsequent 401 requests until it finishes
-    return refreshTokenSubject.pipe(
+    return state.refreshTokenSubject.pipe(
       filter((result) => result !== null),
       take(1),
       switchMap((success) => {

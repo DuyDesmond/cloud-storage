@@ -80,7 +80,7 @@ GET_SHARE_STATE_FILE = """
     SELECT a.principal_type, a.grantee_id, a.share_token, a.password_hash, a.permission, a.revoked_at,
            u.email, u.full_name
     FROM storage.acl_entries a
-    LEFT JOIN storage.users u ON a.grantee_id = u.id
+    LEFT JOIN auth.users u ON a.grantee_id = u.id
     WHERE a.file_id = $1 AND a.revoked_at IS NULL
 """
 
@@ -88,7 +88,7 @@ GET_SHARE_STATE_FOLDER = """
     SELECT a.principal_type, a.grantee_id, a.share_token, a.password_hash, a.permission, a.revoked_at,
            u.email, u.full_name
     FROM storage.acl_entries a
-    LEFT JOIN storage.users u ON a.grantee_id = u.id
+    LEFT JOIN auth.users u ON a.grantee_id = u.id
     WHERE a.folder_id = $1 AND a.revoked_at IS NULL
 """
 

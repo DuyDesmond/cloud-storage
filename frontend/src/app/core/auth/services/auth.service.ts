@@ -8,8 +8,6 @@ export interface User {
   id: string;
   email: string;
   full_name?: string | null;
-  storage_used: number;
-  storage_quota: number;
   created_at: string;
 }
 

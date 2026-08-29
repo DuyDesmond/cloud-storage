@@ -43,7 +43,6 @@ export class StorageStateService {
         this.usedBytes.set(used_bytes);
         this.totalBytes.set(
           total_bytes ||
-            this.authService.currentUser()?.storage_quota ||
             DEFAULT_STORAGE_QUOTA_BYTES,
         );
         this.isLoading.set(false);

@@ -11,7 +11,7 @@ GET_USER_BY_ID = """
 CREATE_USER = """
     INSERT INTO auth.users (email, hashed_password, full_name)
     VALUES ($1, $2, $3)
-    RETURNING id, email, full_name, storage_used, storage_quota, token_version, created_at;
+    RETURNING id, email, full_name, created_at;
 """
 
 DELETE_USER = """
@@ -44,11 +44,6 @@ UPDATE_USER_PASSWORD = """
     WHERE id = $2;
 """
 
-UPDATE_USER_STORAGE = """
-    UPDATE auth.users
-    SET storage_used = $1, updated_at = CURRENT_TIMESTAMP
-    WHERE id = $2;
-"""
 
 INVALIDATE_RESET_TOKEN = """
     UPDATE auth.password_resets 
