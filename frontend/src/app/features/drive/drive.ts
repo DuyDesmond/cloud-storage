@@ -103,7 +103,7 @@ export class Drive implements OnInit, OnDestroy {
   currentSection = signal<DriveSection>('root');
   currentFolderId = signal<string | null>(null);
   breadcrumbs = signal<BreadcrumbItem[]>([]);
-  pageTitle = signal<string>('Cloud Drive');
+  pageTitle = signal<string>('Home');
 
   // Whether the user can upload/create in the current view
   canWrite = signal<boolean>(true);
@@ -239,8 +239,8 @@ export class Drive implements OnInit, OnDestroy {
       document.title = 'Nephos - Loading...';
     } else {
       this.breadcrumbs.set([]);
-      this.pageTitle.set('Cloud Drive');
-      document.title = `Nephos - Cloud Drive`;
+      this.pageTitle.set('Home');
+      document.title = `Nephos - Home`;
     }
 
     this.routeChange$.next({ folderId });
@@ -429,6 +429,79 @@ export class Drive implements OnInit, OnDestroy {
           },
           error: (error) => {
             console.error('Trash folder failed:', error);
+          },
+        });
+    }
+  }
+
+  onMoveItem(event: {
+    sourceId: string;
+    sourceType: 'file' | 'folder';
+    targetFolderId: string | null;
+  }): void {
+    const sourceItem = this.items().find((i) => i.id === event.sourceId);
+    const sourceName =
+      sourceItem?.name ?? (event.sourceType === 'file' ? 'File' : 'Folder');
+
+    let targetName = 'Home';
+    if (event.targetFolderId) {
+      const targetItem = this.items().find(
+        (i) => i.id === event.targetFolderId,
+      );
+      if (targetItem) {
+        targetName = targetItem.name;
+      } else {
+        const targetCrumb = this.breadcrumbs().find(
+          (c) => c.id === event.targetFolderId,
+        );
+        if (targetCrumb) {
+          targetName = targetCrumb.name;
+        }
+      }
+    }
+
+    if (event.sourceType === 'file') {
+      this.fileService
+        .moveFile(event.sourceId, event.targetFolderId)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.items.update((items) =>
+              items.filter((i) => i.id !== event.sourceId),
+            );
+            this.snackBar.open(
+              `"${sourceName}" was moved into "${targetName}"`,
+              'Dismiss',
+              { duration: 3000 },
+            );
+          },
+          error: (err) => {
+            console.error('Failed to move file', err);
+            this.snackBar.open('Failed to move file', 'Dismiss', {
+              duration: 3000,
+            });
+          },
+        });
+    } else {
+      this.fileService
+        .moveFolder(event.sourceId, event.targetFolderId)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.items.update((items) =>
+              items.filter((i) => i.id !== event.sourceId),
+            );
+            this.snackBar.open(
+              `"${sourceName}" was moved into "${targetName}"`,
+              'Dismiss',
+              { duration: 3000 },
+            );
+          },
+          error: (err) => {
+            console.error('Failed to move folder', err);
+            this.snackBar.open('Failed to move folder', 'Dismiss', {
+              duration: 3000,
+            });
           },
         });
     }

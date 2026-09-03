@@ -15,6 +15,7 @@
             [section]="currentSection() === 'shared-with-me' ? 'shared-with-me' : 'drive'"
             [title]="pageTitle()"
             [description]="currentSection() === 'shared-with-me' ? 'Files and folders shared with you.' : 'Access your stored files and folders.'"
+            (droppedOnCrumb)="onMoveItem($event)"
           >
           </app-breadcrumb>
         </header>
@@ -47,6 +48,7 @@
             (download)="onDownloadItem($event)"
             (share)="onShareItem($event)"
             (trash)="onTrashItem($event)"
+            (moveToFolder)="onMoveItem($event)"
           ></app-drive-item-card>
           }
         </div>

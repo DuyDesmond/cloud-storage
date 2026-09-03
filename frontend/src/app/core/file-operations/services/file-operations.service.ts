@@ -409,4 +409,38 @@ export class FileOperationsService {
       )
       .pipe(map((result) => this.toDriveFolder(result)));
   }
+
+  moveFile(
+    fileId: string,
+    parentFolderId: string | null,
+    onCollision: 'replace' | 'keep_duplicate' = 'keep_duplicate',
+  ): Observable<DriveFileItem> {
+    return this.http
+      .patch<BackendFileResponse>(
+        FILE_OPERATION_ENDPOINTS.moveFile(fileId),
+        {
+          parent_folder_id: parentFolderId,
+          on_collision: onCollision,
+        },
+        { withCredentials: true },
+      )
+      .pipe(map((result) => this.toDriveFile(result)));
+  }
+
+  moveFolder(
+    folderId: string,
+    parentFolderId: string | null,
+    onCollision: 'merge' | 'keep_duplicate' = 'keep_duplicate',
+  ): Observable<DriveFolderItem> {
+    return this.http
+      .patch<BackendFolderResponse>(
+        FILE_OPERATION_ENDPOINTS.moveFolder(folderId),
+        {
+          parent_folder_id: parentFolderId,
+          on_collision: onCollision,
+        },
+        { withCredentials: true },
+      )
+      .pipe(map((result) => this.toDriveFolder(result)));
+  }
 }

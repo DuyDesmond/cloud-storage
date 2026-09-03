@@ -21,6 +21,12 @@
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.07);
   }
 
+  &.is-drag-target {
+    border: 2px dashed #0058bc;
+    background-color: #eff4ff;
+    transform: scale(1.02);
+  }
+
   .card-header {
     display: flex;
     justify-content: space-between;

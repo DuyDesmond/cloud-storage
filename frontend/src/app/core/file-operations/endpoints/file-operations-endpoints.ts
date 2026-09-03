@@ -14,7 +14,11 @@ export const FILE_OPERATION_ENDPOINTS = {
   multipartAbort: `${environment.apiUrl}${environment.apiStr}/storage/upload/multipart/abort`,
   downloadFile: (fileId: string) =>
     `${environment.apiUrl}${environment.apiStr}/storage/files/${fileId}/download`,
+  moveFile: (fileId: string) =>
+    `${environment.apiUrl}${environment.apiStr}/storage/files/${fileId}/move`,
   createFolder: `${environment.apiUrl}${environment.apiStr}/storage/folders`,
+  moveFolder: (folderId: string) =>
+    `${environment.apiUrl}${environment.apiStr}/storage/folders/${folderId}/move`,
   trashFile: (fileId: string) =>
     `${environment.apiUrl}${environment.apiStr}/storage/files/${fileId}`,
   trashFolder: (folderId: string) =>

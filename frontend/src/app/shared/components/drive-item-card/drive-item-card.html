@@ -1,15 +1,24 @@
-<div class="drive-card" (dblclick)="onCardClick()">
+<div
+  class="drive-card"
+  (dblclick)="onCardClick()"
+  [draggable]="!readonly()"
+  (dragstart)="onDragStart($event)"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave($event)"
+  (drop)="onDrop($event)"
+  [class.is-drag-target]="isDragTarget()"
+>
   <div class="card-header">
     <span class="card-title" [title]="item().name">{{ item().name }}</span>
     @if (!readonly()) {
-      <button
-        mat-icon-button
-        [matMenuTriggerFor]="menu"
-        class="action-btn"
-        (click)="$event.stopPropagation()"
-      >
-        <mat-icon>more_vert</mat-icon>
-      </button>
+    <button
+      mat-icon-button
+      [matMenuTriggerFor]="menu"
+      class="action-btn"
+      (click)="$event.stopPropagation()"
+    >
+      <mat-icon>more_vert</mat-icon>
+    </button>
     }
 
     <mat-menu #menu="matMenu">
@@ -18,15 +27,12 @@
         <mat-icon>download</mat-icon>
         <span>Download</span>
       </button>
-      }
-      @if (!isTrashView()) {
+      } @if (!isTrashView()) {
       <button mat-menu-item (click)="onShare($event)">
         <mat-icon>share</mat-icon>
         <span>Share</span>
       </button>
-      }
-
-      @if (isTrashView()) {
+      } @if (isTrashView()) {
       <button mat-menu-item (click)="onRestore($event)">
         <mat-icon>restore</mat-icon>
         <span>Restore</span>
@@ -63,7 +69,7 @@
     <div class="meta-info">
       <span>{{ item().updatedAt | date:'MMM d, y, h:mm a' }}</span>
       @if (displayMeta()) {
-        <span>{{ displayMeta() }}</span>
+      <span>{{ displayMeta() }}</span>
       }
     </div>
     <mat-icon

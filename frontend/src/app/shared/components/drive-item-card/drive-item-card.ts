@@ -1,4 +1,4 @@
-import { Component, input, output, computed } from '@angular/core';
+import { Component, input, output, computed, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -23,6 +23,13 @@ export class DriveItemCard {
   trash = output<DriveItem>();
   restore = output<DriveItem>();
   permanentDelete = output<DriveItem>();
+  moveToFolder = output<{
+    sourceId: string;
+    sourceType: 'file' | 'folder';
+    targetFolderId: string;
+  }>();
+
+  isDragTarget = signal(false);
 
   // Dynamic formatting based on DB schema fields
   displayMeta = computed(() => {
@@ -71,6 +78,63 @@ export class DriveItemCard {
   onPermanentDelete(event: MouseEvent): void {
     event.stopPropagation();
     this.permanentDelete.emit(this.item());
+  }
+
+  onDragStart(event: DragEvent): void {
+    if (this.readonly()) return;
+    const itemData = { id: this.item().id, type: this.item().itemType };
+    event.dataTransfer?.setData(
+      'application/x-nephos-move-item',
+      JSON.stringify(itemData),
+    );
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  onDragOver(event: DragEvent): void {
+    if (this.readonly() || this.item().itemType !== 'folder') return;
+    const types = event.dataTransfer?.types;
+    if (types && types.includes('application/x-nephos-move-item')) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.isDragTarget.set(true);
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+      }
+    }
+  }
+
+  onDragLeave(event: DragEvent): void {
+    if (this.readonly() || this.item().itemType !== 'folder') return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragTarget.set(false);
+  }
+
+  onDrop(event: DragEvent): void {
+    if (this.readonly() || this.item().itemType !== 'folder') return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragTarget.set(false);
+
+    const dataString = event.dataTransfer?.getData(
+      'application/x-nephos-move-item',
+    );
+    if (dataString) {
+      try {
+        const data = JSON.parse(dataString);
+        if (data.id === this.item().id) return;
+
+        this.moveToFolder.emit({
+          sourceId: data.id,
+          sourceType: data.type,
+          targetFolderId: this.item().id,
+        });
+      } catch (e) {
+        console.error('Failed to parse dropped item', e);
+      }
+    }
   }
 
   private formatBytes(bytes: number): string {

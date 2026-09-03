@@ -49,6 +49,12 @@
     color: #003d8a;
     background: rgba(0, 88, 188, 0.06);
   }
+
+  &.is-drag-target {
+    background: rgba(0, 88, 188, 0.15);
+    border-radius: 4px;
+    box-shadow: 0 0 0 2px #0058bc;
+  }
 }
 
 .breadcrumb-current {
