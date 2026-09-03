@@ -75,7 +75,7 @@ async def get_breadcrumbs(request: Request,
     current_user: dict | None = Depends(get_optional_current_user),
     service: FileQueryService = Depends(FileQueryService),
 ):
-    breadcrumbs = await service.get_breadcrumbs(target_id, is_file)
+    breadcrumbs = await service.get_breadcrumbs(target_id, is_file, current_user)
     return schemas.BreadcrumbsResponse(breadcrumbs=breadcrumbs)
 
 @router.get("/usage", response_model=schemas.StorageUsageResponse)

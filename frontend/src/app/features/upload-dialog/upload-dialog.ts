@@ -7,6 +7,7 @@ import { MatInputModule } from '@angular/material/input';
 import { FormsModule } from '@angular/forms';
 import {
   traverseDataTransferItems,
+  buildFolderTreeFromFiles,
   TraversedFileItem,
   TraversedFolderItem,
 } from '../../shared/utils/folder-traversal';
@@ -75,8 +76,21 @@ export class UploadDialog {
     const input = event.target as HTMLInputElement;
     if (input.files?.length) {
       const files = Array.from(input.files);
-      this.selectedFiles.update((existing) => [...existing, ...files]);
+      const isFolderInput = input.hasAttribute('webkitdirectory');
+      
+      if (isFolderInput) {
+        const result = buildFolderTreeFromFiles(files);
+        if (result.folders.length > 0) {
+          this.traversedFolders.update((existing) => [...existing, ...result.folders]);
+        }
+        if (result.files.length > 0) {
+          this.selectedFiles.update((existing) => [...existing, ...result.files]);
+        }
+      } else {
+        this.selectedFiles.update((existing) => [...existing, ...files]);
+      }
     }
+    input.value = '';
   }
 
   removeFile(index: number): void {

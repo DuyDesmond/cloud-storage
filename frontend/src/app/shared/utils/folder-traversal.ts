@@ -110,3 +110,64 @@ function readDirectoryEntry(
     readEntries();
   });
 }
+
+export function buildFolderTreeFromFiles(files: File[]): {
+  folders: TraversedFolderItem[];
+  files: File[];
+} {
+  const rootFoldersMap = new Map<string, TraversedFolderItem>();
+  const rootFiles: File[] = [];
+
+  for (const file of files) {
+    const path = file.webkitRelativePath;
+    if (!path) {
+      rootFiles.push(file);
+      continue;
+    }
+
+    const parts = path.split('/');
+    if (parts.length <= 1) {
+      rootFiles.push(file);
+      continue;
+    }
+
+    const rootName = parts[0];
+    if (!rootFoldersMap.has(rootName)) {
+      rootFoldersMap.set(rootName, {
+        name: rootName,
+        relativePath: rootName,
+        files: [],
+        subfolders: [],
+      });
+    }
+
+    let currentFolder = rootFoldersMap.get(rootName)!;
+
+    for (let i = 1; i < parts.length - 1; i++) {
+      const folderName = parts[i];
+      let subfolder = currentFolder.subfolders.find(
+        (f) => f.name === folderName,
+      );
+      if (!subfolder) {
+        subfolder = {
+          name: folderName,
+          relativePath: `${currentFolder.relativePath}/${folderName}`,
+          files: [],
+          subfolders: [],
+        };
+        currentFolder.subfolders.push(subfolder);
+      }
+      currentFolder = subfolder;
+    }
+
+    currentFolder.files.push({
+      file,
+      relativePath: path,
+    });
+  }
+
+  return {
+    folders: Array.from(rootFoldersMap.values()),
+    files: rootFiles,
+  };
+}
