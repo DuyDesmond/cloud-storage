@@ -42,52 +42,27 @@ export class SharedLinkComponent implements OnInit {
       .pipe(
         catchError(() => of(null)),
         switchMap((user) => {
+          if (!user) {
+            this.router.navigate(['/public-share', token]);
+            return of(null);
+          }
           return this.shareService.visitPublicLink(token);
         }),
       )
       .subscribe({
         next: (res: any) => {
+          if (!res) return; // Unauthenticated user was redirected
           this.isLoading.set(false);
           if (res.is_file) {
-            if (this.currentUser()) {
-              this.snackBar.open('File added to Shared with me.', 'Close', {
-                duration: 3000,
-              });
-              this.router.navigate(['/drive/shared-with-me']);
-            } else {
-              const fileItem: DriveFileItem = {
-                id: res.target_id,
-                ownerId: '',
-                parentFolderId: null,
-                path: '',
-                name: res.file_name || 'Shared File',
-                itemType: 'file',
-                storageKey: '',
-                sizeBytes: res.size_bytes || 0,
-                mimeType: res.mime_type || '',
-                contentHash: null,
-                isTrashed: false,
-                trashedAt: null,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              };
-              this.dialog.open(FilePreview, {
-                width: '80vw',
-                height: '80vh',
-                maxWidth: '1200px',
-                panelClass: 'preview-dialog-panel',
-                data: { item: fileItem },
-              });
-            }
+            this.snackBar.open('File added to Shared with me.', 'Close', {
+              duration: 3000,
+            });
+            this.router.navigate(['/drive/shared-with-me']);
           } else {
-            if (this.currentUser()) {
-              this.router.navigate([
-                '/drive/shared-with-me/folder',
-                res.target_id,
-              ]);
-            } else {
-              this.error.set('Folders cannot be viewed.');
-            }
+            this.router.navigate([
+              '/drive/shared-with-me/folder',
+              res.target_id,
+            ]);
           }
         },
         error: (err) => {

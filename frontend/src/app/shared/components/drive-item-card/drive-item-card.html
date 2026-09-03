@@ -1,14 +1,16 @@
 <div class="drive-card" (dblclick)="onCardClick()">
   <div class="card-header">
     <span class="card-title" [title]="item().name">{{ item().name }}</span>
-    <button
-      mat-icon-button
-      [matMenuTriggerFor]="menu"
-      class="action-btn"
-      (click)="$event.stopPropagation()"
-    >
-      <mat-icon>more_vert</mat-icon>
-    </button>
+    @if (!readonly()) {
+      <button
+        mat-icon-button
+        [matMenuTriggerFor]="menu"
+        class="action-btn"
+        (click)="$event.stopPropagation()"
+      >
+        <mat-icon>more_vert</mat-icon>
+      </button>
+    }
 
     <mat-menu #menu="matMenu">
       @if (item().itemType === 'file' && !isTrashView()) {

@@ -14,6 +14,7 @@ import { DriveItem } from './drive-item.model';
 export class DriveItemCard {
   item = input.required<DriveItem>();
   isTrashView = input<boolean>();
+  readonly = input<boolean>(false);
 
   // Outputs for parent drive component actions
   open = output<DriveItem>();

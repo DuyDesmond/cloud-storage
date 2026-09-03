@@ -11,7 +11,7 @@ import { BreadcrumbItem } from '../../../core/file-operations/services/file-oper
 })
 export class Breadcrumb {
   breadcrumbs = input<BreadcrumbItem[]>([]);
-  section = input<'drive' | 'shared-with-me' | 'trash'>('drive');
+  section = input<'drive' | 'shared-with-me' | 'trash' | 'shared'>('drive');
   title = input<string>('');
   description = input<string>('');
 
@@ -21,6 +21,8 @@ export class Breadcrumb {
         return '/drive/shared-with-me';
       case 'trash':
         return '/trash';
+      case 'shared':
+        return '/';
       case 'drive':
       default:
         return '/drive/root';
@@ -33,6 +35,8 @@ export class Breadcrumb {
         return 'group';
       case 'trash':
         return 'delete';
+      case 'shared':
+        return 'cloud';
       case 'drive':
       default:
         return 'home';

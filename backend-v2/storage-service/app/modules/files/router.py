@@ -52,7 +52,7 @@ router = APIRouter(prefix="/storage", tags=["File Operations"])
 @map_domain_exceptions
 async def get_storage_contents(request: Request, 
     parent_folder_id: uuid.UUID | None = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_current_user),
     service: FileQueryService = Depends(FileQueryService),
 ):
     return await service.get_storage_contents(current_user, parent_folder_id)
@@ -72,7 +72,7 @@ async def get_shared_with_me_contents(request: Request,
 async def get_breadcrumbs(request: Request, 
     target_id: uuid.UUID,
     is_file: bool = False,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_current_user),
     service: FileQueryService = Depends(FileQueryService),
 ):
     breadcrumbs = await service.get_breadcrumbs(target_id, is_file)

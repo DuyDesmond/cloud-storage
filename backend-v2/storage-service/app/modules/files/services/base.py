@@ -20,6 +20,7 @@ class BaseFileService:
         self.trash_repo = trash_repo
         self.management_repo = management_repo
         self.storage = storage
+        self.provided_password: str | None = None
 
     @staticmethod
     def _as_file_response(row: dict[str, Any]):

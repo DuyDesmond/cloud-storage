@@ -8,6 +8,7 @@ import { authGuard } from './core/auth/guards/auth.guard';
 import { Trash } from './features/trash/trash';
 import { SharedWithMe } from './features/shared-with-me/shared-with-me';
 import { SharedLinkComponent } from './features/shared-link/shared-link';
+import { PublicShareComponent } from './features/public-share/public-share';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'landing', pathMatch: 'full' },
@@ -22,5 +23,7 @@ export const routes: Routes = [
   { path: 'profile', component: UserProfile, canActivate: [authGuard] },
   { path: 'trash', component: Trash, canActivate: [authGuard] },
   { path: 'shared/:token', component: SharedLinkComponent },
+  { path: 'public-share/:token', component: PublicShareComponent },
+  { path: 'public-share/folder/:id', component: PublicShareComponent },
   { path: '**', redirectTo: 'landing' },
 ];

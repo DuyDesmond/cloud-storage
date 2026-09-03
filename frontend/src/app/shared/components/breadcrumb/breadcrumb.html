@@ -7,7 +7,7 @@
     @for (crumb of breadcrumbs(); track crumb.id; let last = $last) {
       <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
       @if (!last) {
-        <a class="breadcrumb-link" [routerLink]="section() === 'shared-with-me' ? '/drive/shared-with-me/folder/' + crumb.id : '/drive/folder/' + crumb.id">{{ crumb.name }}</a>
+        <a class="breadcrumb-link" [routerLink]="section() === 'shared-with-me' ? '/drive/shared-with-me/folder/' + crumb.id : (section() === 'shared' ? '/public-share/folder/' + crumb.id : '/drive/root/folder/' + crumb.id)">{{ crumb.name }}</a>
       } @else {
         <span class="breadcrumb-current">{{ crumb.name }}</span>
       }

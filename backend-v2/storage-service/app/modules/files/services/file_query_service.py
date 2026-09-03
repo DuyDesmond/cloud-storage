@@ -2,7 +2,7 @@ from typing import Any
 from fastapi import Depends
 import uuid
 import asyncio
-from app.core.exceptions import ItemNotFoundError, InvalidOperationError, DuplicateRecordError, InfrastructureError, QuotaExceededError
+from app.core.exceptions import ItemNotFoundError, InvalidOperationError, DuplicateRecordError, InfrastructureError, QuotaExceededError, AccessDeniedError
 from app.modules.files import schemas
 from app.modules.files.utils.sanitization import sanitize_filename
 from app.modules.files.utils.db_retry import with_db_retry
@@ -23,12 +23,15 @@ class FileQueryService(BaseFileService):
 
     async def get_storage_contents(
             self,
-            current_user: dict[str, Any],
+            current_user: dict[str, Any] | None,
             parent_folder_id: uuid.UUID | None = None,
         ) -> schemas.StorageContentResponse:
+            if not current_user and not parent_folder_id:
+                raise AccessDeniedError("Anonymous users cannot list the root directory.")
+
             if parent_folder_id:
                 await self._require_view_access(
-                    target_type="folder", target_id=parent_folder_id, current_user_id=current_user["id"]
+                    target_type="folder", target_id=parent_folder_id, current_user_id=current_user["id"] if current_user else None
                 )
                 folders_raw = await self.query_repo.list_folders_by_parent(parent_folder_id)
                 files_raw = await self.query_repo.list_files_by_parent(parent_folder_id)
@@ -78,7 +81,11 @@ class FileQueryService(BaseFileService):
             self,
             target_id: uuid.UUID,
             is_file: bool,
+            current_user: dict[str, Any] | None = None,
         ) -> list[dict[str, str]]:
+            await self._require_view_access(
+                target_type="file" if is_file else "folder", target_id=target_id, current_user_id=current_user["id"] if current_user else None
+            )
             path_str = await (self.query_repo.get_path_for_file(target_id) if is_file else self.query_repo.get_path_for_folder(target_id))
             if not path_str:
                 return []
