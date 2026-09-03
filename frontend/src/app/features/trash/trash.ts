@@ -12,6 +12,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatDialog } from '@angular/material/dialog';
 import { Observable, Subscription } from 'rxjs';
 
 import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
@@ -25,6 +26,7 @@ import {
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
 import { UploadWidget } from '../upload-widget/upload-widget';
 import { DriveItemCard } from '../../shared/components/drive-item-card/drive-item-card';
+import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
 
 @Component({
   selector: 'app-trash',
@@ -46,6 +48,7 @@ export class Trash implements OnInit, OnDestroy {
   private fileService = inject(FileOperationsService);
   private snackBar = inject(MatSnackBar);
   private router = inject(Router);
+  private dialog = inject(MatDialog);
   private subscriptions = new Subscription();
   readonly storageState = inject(StorageStateService);
 
@@ -112,71 +115,84 @@ export class Trash implements OnInit, OnDestroy {
   }
 
   onPermanentDeleteItem(item: DriveItem): void {
-    if (
-      !confirm(
-        `Permanently delete "${item.name}"? This action cannot be undone.`,
-      )
-    ) {
-      return;
-    }
+    const dialogRef = this.dialog.open(ConfirmDialog, {
+      width: '400px',
+      data: {
+        title: 'Delete Permanently',
+        message: `Permanently delete "${item.name}"? This action cannot be undone.`,
+        confirmText: 'Delete',
+        isDestructive: true,
+      },
+    });
 
-    const delete$: Observable<unknown> =
-      item.itemType === 'folder'
-        ? this.fileService.hardDeleteFolder(item.id)
-        : this.fileService.hardDeleteFile(item.id);
+    dialogRef.afterClosed().subscribe((confirmed) => {
+      if (!confirmed) return;
 
-    this.subscriptions.add(
-      delete$.subscribe({
-        next: () => {
-          this.items.update((list) => list.filter((i) => i.id !== item.id));
-          this.snackBar.open(`"${item.name}" permanently deleted.`, 'Close', {
-            duration: 2500,
-          });
-          this.storageState.refreshStorageUsage();
-        },
-        error: (err: any) => {
-          const errorMsg =
-            err?.error?.detail ||
-            err?.message ||
-            'Failed to delete item permanently.';
-          this.snackBar.open(errorMsg, 'Close', {
-            duration: 3000,
-          });
-        },
-      }),
-    );
+      const delete$: Observable<unknown> =
+        item.itemType === 'folder'
+          ? this.fileService.hardDeleteFolder(item.id)
+          : this.fileService.hardDeleteFile(item.id);
+
+      this.subscriptions.add(
+        delete$.subscribe({
+          next: () => {
+            this.items.update((list) => list.filter((i) => i.id !== item.id));
+            this.snackBar.open(`"${item.name}" permanently deleted.`, 'Close', {
+              duration: 2500,
+            });
+            this.storageState.refreshStorageUsage();
+          },
+          error: (err: any) => {
+            const errorMsg =
+              err?.error?.detail ||
+              err?.message ||
+              'Failed to delete item permanently.';
+            this.snackBar.open(errorMsg, 'Close', {
+              duration: 3000,
+            });
+          },
+        }),
+      );
+    });
   }
 
   onEmptyTrash(): void {
-    if (
-      !confirm(
-        'Permanently delete all items in the trash? This action is irreversible.',
-      )
-    ) {
-      return;
-    }
+    const dialogRef = this.dialog.open(ConfirmDialog, {
+      width: '400px',
+      data: {
+        title: 'Empty Trash',
+        message:
+          'Permanently delete all items in the trash? This action is irreversible.',
+        confirmText: 'Empty Trash',
+        isDestructive: true,
+      },
+    });
 
-    this.isLoading.set(true);
-    this.subscriptions.add(
-      this.fileService.emptyTrash().subscribe({
-        next: () => {
-          this.items.set([]);
-          this.isLoading.set(false);
-          this.snackBar.open('Trash emptied successfully.', 'Close', {
-            duration: 2500,
-          });
-          this.storageState.refreshStorageUsage();
-        },
-        error: (err: any) => {
-          this.isLoading.set(false);
-          const errorMsg =
-            err?.error?.detail || err?.message || 'Failed to empty trash.';
-          this.snackBar.open(errorMsg, 'Close', {
-            duration: 3000,
-          });
-        },
-      }),
-    );
+    dialogRef.afterClosed().subscribe((confirmed) => {
+      if (!confirmed) return;
+
+      this.isLoading.set(true);
+      this.subscriptions.add(
+        this.fileService.emptyTrash().subscribe({
+          next: () => {
+            this.items.set([]);
+            this.isLoading.set(false);
+            this.snackBar.open('Trash emptied successfully.', 'Close', {
+              duration: 2500,
+            });
+            this.storageState.refreshStorageUsage();
+          },
+          error: (err: any) => {
+            this.isLoading.set(false);
+            const errorMsg =
+              err?.error?.detail || err?.message || 'Failed to empty trash.';
+            this.snackBar.open(errorMsg, 'Close', {
+              duration: 3000,
+            });
+          },
+        }),
+      );
+    });
   }
 
   onUploadTrigger(): void {
