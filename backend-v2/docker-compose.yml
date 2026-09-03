@@ -31,6 +31,23 @@ services:
     networks:
       - backend-network
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend-network
+
   auth-service:
     build:
       context: ./auth-service
@@ -40,11 +57,14 @@ services:
     environment:
       - DATABASE_URL=postgresql://root:password@postgres:5432/nephos
       - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
       - AUTH_SERVICE_URL=http://auth-service:8000${API_STR}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - backend-network
@@ -58,11 +78,14 @@ services:
     environment:
       - DATABASE_URL=postgresql://root:password@postgres:5432/nephos
       - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
       - AUTH_SERVICE_URL=http://auth-service:8000${API_STR}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       auth-service:
         condition: service_started

@@ -20,8 +20,10 @@ describe('SharedWithMe', () => {
   beforeEach(async () => {
     mockFileService = {
       getSharedWithMe: vi.fn().mockReturnValue(of({ folders: [], files: [] })),
-      getStorageContents: vi.fn().mockReturnValue(of({ folders: [], files: [] })),
-      getBreadcrumbs: vi.fn().mockReturnValue(of({ breadcrumbs: [] }))
+      getStorageContents: vi
+        .fn()
+        .mockReturnValue(of({ folders: [], files: [] })),
+      getBreadcrumbs: vi.fn().mockReturnValue(of({ breadcrumbs: [] })),
     };
 
     mockStorageState = {
@@ -29,18 +31,18 @@ describe('SharedWithMe', () => {
       usedStorageGB: signal(1),
       totalStorageGB: signal(10),
       storagePercentage: signal(10),
-      isLoading: signal(false)
+      isLoading: signal(false),
     };
 
     mockAuthService = {
-      currentUser: signal({ full_name: 'Test', email: 't@t.com' })
+      currentUser: signal({ full_name: 'Test', email: 't@t.com' }),
     };
 
     let routerEvents = new Subject();
     mockRouter = {
       url: '/drive/shared-with-me',
       events: routerEvents,
-      navigateByUrl: vi.fn()
+      navigateByUrl: vi.fn(),
     };
 
     const mockUploadQueueService = {
@@ -48,7 +50,7 @@ describe('SharedWithMe', () => {
       activeUploadsCount: signal(0),
       hasActiveOrQueued: signal(false),
       totalProgressPercentage: signal(0),
-      queue: signal([])
+      queue: signal([]),
     };
 
     await TestBed.configureTestingModule({
@@ -59,8 +61,8 @@ describe('SharedWithMe', () => {
         { provide: StorageStateService, useValue: mockStorageState },
         { provide: AuthService, useValue: mockAuthService },
         { provide: UploadQueueService, useValue: mockUploadQueueService },
-        { provide: ActivatedRoute, useValue: { snapshot: { params: {} } } }
-      ]
+        { provide: ActivatedRoute, useValue: { snapshot: { params: {} } } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(SharedWithMe);

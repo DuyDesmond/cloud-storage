@@ -10,7 +10,7 @@ import {
   computed,
   OnInit,
   OnDestroy,
-  DestroyRef
+  DestroyRef,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
@@ -20,13 +20,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import {
-  Subject,
-  switchMap,
-  of,
-  catchError,
-  firstValueFrom,
-} from 'rxjs';
+import { Subject, switchMap, of, catchError, firstValueFrom } from 'rxjs';
 import { DashboardHeader } from '../../shared/components/dashboard-header/dashboard-header';
 import {
   SidePanel,
@@ -148,7 +142,7 @@ export class Drive implements OnInit, OnDestroy {
             }),
           );
         }),
-        takeUntilDestroyed(this.destroyRef)
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((data: StorageContentResponse) => {
         const folderItems: DriveItem[] = (data.folders ?? []).map(
@@ -166,22 +160,24 @@ export class Drive implements OnInit, OnDestroy {
           }),
         );
 
-        const fileItems: DriveItem[] = (data.files ?? []).map((f: FileItem) => ({
-          id: f.id,
-          ownerId: f.owner_id,
-          parentFolderId: f.parent_folder_id,
-          path: f.path,
-          name: f.file_name,
-          itemType: 'file',
-          storageKey: f.storage_key,
-          sizeBytes: f.size_bytes,
-          mimeType: f.mime_type,
-          contentHash: f.content_hash,
-          isTrashed: f.is_trashed,
-          trashedAt: f.trashed_at,
-          createdAt: f.created_at,
-          updatedAt: f.updated_at,
-        }));
+        const fileItems: DriveItem[] = (data.files ?? []).map(
+          (f: FileItem) => ({
+            id: f.id,
+            ownerId: f.owner_id,
+            parentFolderId: f.parent_folder_id,
+            path: f.path,
+            name: f.file_name,
+            itemType: 'file',
+            storageKey: f.storage_key,
+            sizeBytes: f.size_bytes,
+            mimeType: f.mime_type,
+            contentHash: f.content_hash,
+            isTrashed: f.is_trashed,
+            trashedAt: f.trashed_at,
+            createdAt: f.created_at,
+            updatedAt: f.updated_at,
+          }),
+        );
 
         this.items.set([...folderItems, ...fileItems]);
         this.isLoading.set(false);
@@ -231,7 +227,8 @@ export class Drive implements OnInit, OnDestroy {
     }
 
     // Skip if nothing changed (prevents double-fetching on router events that aren't navigations)
-    if (this.initialized && prevFolderId === folderId && prevNav === newNav) return;
+    if (this.initialized && prevFolderId === folderId && prevNav === newNav)
+      return;
     this.initialized = true;
 
     this.currentFolderId.set(folderId);
@@ -250,7 +247,8 @@ export class Drive implements OnInit, OnDestroy {
   }
 
   private fetchBreadcrumbs(folderId: string, isFile: boolean): void {
-    this.fileService.getBreadcrumbs(folderId, isFile)
+    this.fileService
+      .getBreadcrumbs(folderId, isFile)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (res) => {
@@ -346,7 +344,8 @@ export class Drive implements OnInit, OnDestroy {
   }
 
   private createFolder(folderName: string, parentFolderId?: string): void {
-    this.fileService.createFolder(folderName, parentFolderId)
+    this.fileService
+      .createFolder(folderName, parentFolderId)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (folder) => {
@@ -355,8 +354,7 @@ export class Drive implements OnInit, OnDestroy {
         error: (error) => {
           console.error('Create folder failed:', error);
         },
-      }
-    );
+      });
   }
 
   onOpenItem(item: DriveItem): void {
@@ -377,7 +375,8 @@ export class Drive implements OnInit, OnDestroy {
   onDownloadItem(item: DriveItem): void {
     if (item.itemType !== 'file') return;
 
-    this.fileService.downloadFile(item.id)
+    this.fileService
+      .downloadFile(item.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (blob) => {
@@ -391,8 +390,7 @@ export class Drive implements OnInit, OnDestroy {
         error: (error) => {
           console.error('Download failed:', error);
         },
-      }
-    );
+      });
   }
 
   onShareItem(item: DriveItem): void {
@@ -404,7 +402,8 @@ export class Drive implements OnInit, OnDestroy {
 
   onTrashItem(item: DriveItem): void {
     if (item.itemType === 'file') {
-      this.fileService.trashFile(item.id)
+      this.fileService
+        .trashFile(item.id)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: () => {
@@ -418,7 +417,8 @@ export class Drive implements OnInit, OnDestroy {
           },
         });
     } else {
-      this.fileService.trashFolder(item.id)
+      this.fileService
+        .trashFolder(item.id)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: () => {
@@ -430,8 +430,7 @@ export class Drive implements OnInit, OnDestroy {
           error: (error) => {
             console.error('Trash folder failed:', error);
           },
-        }
-      );
+        });
     }
   }
 }

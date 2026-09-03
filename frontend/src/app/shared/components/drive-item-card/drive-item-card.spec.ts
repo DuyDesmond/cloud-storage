@@ -23,12 +23,12 @@ describe('DriveItemCard', () => {
     isTrashed: false,
     trashedAt: null,
     storageKey: 'test-key',
-    contentHash: 'hash'
+    contentHash: 'hash',
   };
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [DriveItemCard]
+      imports: [DriveItemCard],
     }).compileComponents();
 
     fixture = TestBed.createComponent(DriveItemCard);

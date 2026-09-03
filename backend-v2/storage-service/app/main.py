@@ -11,28 +11,34 @@ from app.modules.files.router import router as file_operations_router
 from app.modules.share.router import router as share_router
 from app.core.rate_limit import setup_rate_limiting
 
-logger = logging.getLogger(__name__)
-
 import asyncio
 from app.core.events import listen_for_events
+from app.core.rabbitmq import rabbitmq_client
+from app.core.jobs import process_deletion_jobs
 
+logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Initialize DB Pool and ensure table exists
     await init_db_pool()
     await init_redis()
+    await rabbitmq_client.connect()
+    
     if pool:
         async with pool.acquire() as conn:
             # Note: storage-service only initializes its own tables
             await conn.execute(get_file_operations_tables_sql())
         print("Database tables verified / created.")
 
-    # Start listening to events
+    # Start listening to events and jobs
     app.state.event_task = asyncio.create_task(listen_for_events())
+    
+    app.state.job_task = asyncio.create_task(process_deletion_jobs())
 
     yield
 
     # Shutdown: Close DB Pool
+    await rabbitmq_client.close()
     await close_db_pool()
     await close_redis()
 

@@ -10,14 +10,12 @@ describe('PasswordPromptComponent', () => {
 
   beforeEach(async () => {
     mockDialogRef = {
-      close: vi.fn()
+      close: vi.fn(),
     };
 
     await TestBed.configureTestingModule({
       imports: [PasswordPromptComponent],
-      providers: [
-        { provide: MatDialogRef, useValue: mockDialogRef }
-      ]
+      providers: [{ provide: MatDialogRef, useValue: mockDialogRef }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(PasswordPromptComponent);

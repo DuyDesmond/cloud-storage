@@ -112,7 +112,7 @@ class FileManagementService(BaseFileService):
                 raise ItemNotFoundError("Destination folder not found.")
             except QuotaExceededError:
                 raise InfrastructureError("Not enough storage.")
-            except InvalidOperationError, InfrastructureError:
+            except (InvalidOperationError, InfrastructureError):
                 raise DuplicateRecordError("A folder with that name already exists at the destination. "
                     "Resubmit with on_collision set to 'merge' or 'keep_duplicate'.",)
     
@@ -144,7 +144,7 @@ class FileManagementService(BaseFileService):
                 row = await with_db_retry(_perform_operation)
             except ItemNotFoundError:
                 raise ItemNotFoundError("Destination folder not found.")
-            except InvalidOperationError, InfrastructureError:
+            except (InvalidOperationError, InfrastructureError):
                 raise DuplicateRecordError("A file with that name already exists at the destination. "
                     "Resubmit with on_collision set to 'replace' or 'keep_duplicate'.",)
     

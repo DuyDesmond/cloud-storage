@@ -1,10 +1,6 @@
 import { Component, inject, signal, DestroyRef } from '@angular/core';
 
-import {
-  FormBuilder,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '@core/auth/services/auth.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -68,7 +64,8 @@ export class Login {
     // Prevent execution on empty required fields
     if (!email || !password) return;
 
-    this.authService.login(email, password)
+    this.authService
+      .login(email, password)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (user) => {

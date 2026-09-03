@@ -12,7 +12,7 @@ describe('Breadcrumb', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [Breadcrumb],
-      providers: [provideRouter([])]
+      providers: [provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(Breadcrumb);

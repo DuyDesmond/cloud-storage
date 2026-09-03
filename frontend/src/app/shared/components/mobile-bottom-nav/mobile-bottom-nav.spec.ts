@@ -12,7 +12,7 @@ describe('MobileBottomNav', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [MobileBottomNav],
-      providers: [provideRouter([])]
+      providers: [provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(MobileBottomNav);
@@ -28,10 +28,15 @@ describe('MobileBottomNav', () => {
   it('should emit navChange and navigate on nav click', () => {
     const emitSpy = vi.spyOn(component.navChange, 'emit');
     const navigateSpy = vi.spyOn(router, 'navigateByUrl');
-    const testItem: SidePanelNavItem = { key: 'home', icon: 'home', label: 'Home', route: '/drive/root' };
-    
+    const testItem: SidePanelNavItem = {
+      key: 'home',
+      icon: 'home',
+      label: 'Home',
+      route: '/drive/root',
+    };
+
     component.onNavClick(testItem);
-    
+
     expect(emitSpy).toHaveBeenCalledWith('home');
     expect(navigateSpy).toHaveBeenCalledWith('/drive/root');
   });
@@ -39,9 +44,9 @@ describe('MobileBottomNav', () => {
   it('should emit upload event on upload button click', () => {
     const emitSpy = vi.spyOn(component.upload, 'emit');
     const uploadBtn = fixture.nativeElement.querySelector('.upload-tab');
-    
+
     uploadBtn.click();
-    
+
     expect(emitSpy).toHaveBeenCalled();
   });
 });

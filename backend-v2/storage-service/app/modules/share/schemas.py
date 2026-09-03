@@ -49,3 +49,6 @@ class VisitPublicLinkResponse(BaseModel):
     message: str
     is_file: bool
     target_id: UUID
+    file_name: Optional[str] = None
+    mime_type: Optional[str] = None
+    size_bytes: Optional[int] = None

@@ -1,6 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { StorageStateService } from '../file-operations/services/storage-state.service';
-import { FileOperationsService, DEFAULT_STORAGE_QUOTA_BYTES } from '../file-operations/services/file-operations.service';
+import {
+  FileOperationsService,
+  DEFAULT_STORAGE_QUOTA_BYTES,
+} from '../file-operations/services/file-operations.service';
 import { AuthService } from '../auth/services/auth.service';
 import { UploadQueueService } from '../file-operations/services/upload-queue.service';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -15,17 +18,22 @@ describe('StorageStateService', () => {
 
   beforeEach(() => {
     uploadSubject = new Subject<void>();
-    
+
     mockFileService = {
-      getStorageUsage: vi.fn().mockReturnValue(of({ used_bytes: 1024 * 1024, total_bytes: DEFAULT_STORAGE_QUOTA_BYTES }))
+      getStorageUsage: vi.fn().mockReturnValue(
+        of({
+          used_bytes: 1024 * 1024,
+          total_bytes: DEFAULT_STORAGE_QUOTA_BYTES,
+        }),
+      ),
     };
-    
+
     mockAuthService = {
-      currentUser: vi.fn().mockReturnValue(null)
+      currentUser: vi.fn().mockReturnValue(null),
     };
-    
+
     mockUploadQueueService = {
-      onFileUploaded: uploadSubject.asObservable()
+      onFileUploaded: uploadSubject.asObservable(),
     };
 
     TestBed.configureTestingModule({
@@ -33,8 +41,8 @@ describe('StorageStateService', () => {
         StorageStateService,
         { provide: FileOperationsService, useValue: mockFileService },
         { provide: AuthService, useValue: mockAuthService },
-        { provide: UploadQueueService, useValue: mockUploadQueueService }
-      ]
+        { provide: UploadQueueService, useValue: mockUploadQueueService },
+      ],
     });
     service = TestBed.inject(StorageStateService);
   });
@@ -56,7 +64,9 @@ describe('StorageStateService', () => {
   });
 
   it('should handle error when refreshing storage', () => {
-    mockFileService.getStorageUsage.mockReturnValue(throwError(() => new Error('error')));
+    mockFileService.getStorageUsage.mockReturnValue(
+      throwError(() => new Error('error')),
+    );
     service.refreshStorageUsage();
     expect(service.isLoading()).toBe(false);
   });

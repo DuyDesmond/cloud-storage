@@ -1,7 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { FileOperationsService, BackendFileResponse, BackendFolderResponse } from '../file-operations/services/file-operations.service';
+import {
+  HttpTestingController,
+  provideHttpClientTesting,
+} from '@angular/common/http/testing';
+import {
+  FileOperationsService,
+  BackendFileResponse,
+  BackendFolderResponse,
+} from '../file-operations/services/file-operations.service';
 import { FILE_OPERATION_ENDPOINTS } from '../file-operations/endpoints/file-operations-endpoints';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
@@ -42,8 +49,8 @@ describe('FileOperationsService', () => {
       providers: [
         FileOperationsService,
         provideHttpClient(),
-        provideHttpClientTesting()
-      ]
+        provideHttpClientTesting(),
+      ],
     });
     service = TestBed.inject(FileOperationsService);
     httpMock = TestBed.inject(HttpTestingController);
@@ -72,23 +79,32 @@ describe('FileOperationsService', () => {
   });
 
   it('should get storage contents', () => {
-    service.getStorageContents('folder-1').subscribe(res => {
+    service.getStorageContents('folder-1').subscribe((res) => {
       expect(res).toBeTruthy();
     });
 
-    const req = httpMock.expectOne(request => request.url === FILE_OPERATION_ENDPOINTS.getStorage && request.params.get('parent_folder_id') === 'folder-1');
+    const req = httpMock.expectOne(
+      (request) =>
+        request.url === FILE_OPERATION_ENDPOINTS.getStorage &&
+        request.params.get('parent_folder_id') === 'folder-1',
+    );
     expect(req.request.method).toBe('GET');
     req.flush({ folders: [], files: [], path: [] });
   });
 
   it('should request presigned upload', () => {
     const payload = { file_name: 'test.txt', size_bytes: 123 };
-    service.requestPresignedUpload(payload).subscribe(res => {
+    service.requestPresignedUpload(payload).subscribe((res) => {
       expect(res.presigned_url).toBe('http://test.url');
     });
 
     const req = httpMock.expectOne(FILE_OPERATION_ENDPOINTS.uploadPresign);
     expect(req.request.method).toBe('POST');
-    req.flush({ presigned_url: 'http://test.url', storage_key: 'sk1', expires_in: 3600, headers: {} });
+    req.flush({
+      presigned_url: 'http://test.url',
+      storage_key: 'sk1',
+      expires_in: 3600,
+      headers: {},
+    });
   });
 });

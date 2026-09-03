@@ -23,7 +23,7 @@ describe('Register', () => {
       providers: [
         { provide: AuthService, useValue: authServiceSpy },
         { provide: Router, useValue: routerSpy },
-        { provide: ActivatedRoute, useValue: {} }
+        { provide: ActivatedRoute, useValue: {} },
       ],
     }).compileComponents();
 
@@ -43,13 +43,17 @@ describe('Register', () => {
   it('should enforce password mismatch validation', () => {
     component.registerForm.patchValue({
       password: 'password123',
-      confirmPassword: 'differentPassword'
+      confirmPassword: 'differentPassword',
     });
 
     // Trigger the cross-field validator
     component.registerForm.updateValueAndValidity();
 
-    expect(component.registerForm.get('confirmPassword')?.hasError('passwordMismatch')).toBe(true);
+    expect(
+      component.registerForm
+        .get('confirmPassword')
+        ?.hasError('passwordMismatch'),
+    ).toBe(true);
   });
 
   it('should correctly evaluate the isFormReady getter', () => {
@@ -60,7 +64,7 @@ describe('Register', () => {
       email: 'jane@nephos.com',
       password: 'password123',
       confirmPassword: 'password123',
-      terms: true
+      terms: true,
     });
 
     expect(component.isFormReady()).toBe(true);
@@ -78,7 +82,10 @@ describe('Register', () => {
   });
 
   it('should mark form as touched if invalid on submit', () => {
-    const markAllAsTouchedSpy = vi.spyOn(component.registerForm, 'markAllAsTouched');
+    const markAllAsTouchedSpy = vi.spyOn(
+      component.registerForm,
+      'markAllAsTouched',
+    );
     component.onSubmit();
 
     expect(markAllAsTouchedSpy).toHaveBeenCalled();
@@ -93,7 +100,7 @@ describe('Register', () => {
       email: 'jane@nephos.com',
       password: 'password123',
       confirmPassword: 'password123',
-      terms: true
+      terms: true,
     });
 
     component.onSubmit();
@@ -103,20 +110,24 @@ describe('Register', () => {
   });
 
   it('should display error message on registration failure', () => {
-    authServiceSpy.register.mockReturnValue(throwError(() => new Error('Registration failed')));
+    authServiceSpy.register.mockReturnValue(
+      throwError(() => new Error('Registration failed')),
+    );
 
     component.registerForm.patchValue({
       username: 'Jane Doe',
       email: 'jane@nephos.com',
       password: 'password123',
       confirmPassword: 'password123',
-      terms: true
+      terms: true,
     });
 
     component.onSubmit();
 
     expect(component.isLoading()).toBe(false);
-    expect(component.errorMessage()).toBe('Registration failed. Please check your credentials or network connections.');
+    expect(component.errorMessage()).toBe(
+      'Registration failed. Please check your credentials or network connections.',
+    );
   });
 
   // --- DOM Rendering Tests ---
@@ -147,7 +158,7 @@ describe('Register', () => {
       email: '  @nephos.com',
       password: 'password123',
       confirmPassword: 'password123',
-      terms: true
+      terms: true,
     });
 
     // Even if the reactive form considers it valid, our getter should catch the empty trim
@@ -158,22 +169,32 @@ describe('Register', () => {
     // 1. Induce the mismatch error
     component.registerForm.patchValue({
       password: 'password123',
-      confirmPassword: 'wrongPassword'
+      confirmPassword: 'wrongPassword',
     });
     component.registerForm.updateValueAndValidity();
-    expect(component.registerForm.get('confirmPassword')?.hasError('passwordMismatch')).toBe(true);
+    expect(
+      component.registerForm
+        .get('confirmPassword')
+        ?.hasError('passwordMismatch'),
+    ).toBe(true);
 
     // 2. Correct the mismatch
     component.registerForm.patchValue({ confirmPassword: 'password123' });
     component.registerForm.updateValueAndValidity();
 
     // 3. Verify it clears
-    expect(component.registerForm.get('confirmPassword')?.hasError('passwordMismatch')).toBe(false);
+    expect(
+      component.registerForm
+        .get('confirmPassword')
+        ?.hasError('passwordMismatch'),
+    ).toBe(false);
   });
 
   it('should disable the submit button when the form is incomplete or loading', () => {
     fixture.detectChanges();
-    const submitButton = fixture.debugElement.query(By.css('.submit-button')).nativeElement;
+    const submitButton = fixture.debugElement.query(
+      By.css('.submit-button'),
+    ).nativeElement;
 
     // Initially disabled because form is empty
     expect(submitButton.disabled).toBe(true);
@@ -184,7 +205,7 @@ describe('Register', () => {
       email: 'jane@nephos.com',
       password: 'password123',
       confirmPassword: 'password123',
-      terms: true
+      terms: true,
     });
     fixture.detectChanges();
 
@@ -201,7 +222,9 @@ describe('Register', () => {
     fixture.detectChanges();
 
     // Angular Material checkboxes use a nested input for the actual click target
-    const checkboxInput = fixture.debugElement.query(By.css('mat-checkbox input')).nativeElement;
+    const checkboxInput = fixture.debugElement.query(
+      By.css('mat-checkbox input'),
+    ).nativeElement;
 
     expect(component.registerForm.get('terms')?.value).toBe(false);
 

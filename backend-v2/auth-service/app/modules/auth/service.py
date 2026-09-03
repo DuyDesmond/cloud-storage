@@ -9,12 +9,19 @@ from app.core.security import hash_password, verify_password, create_token, deco
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.cache import CacheRepository
 from app.modules.auth import schemas
+from app.core.rabbitmq import RabbitMQClient, get_rabbitmq_client
 
 class AuthService:
 
-    def __init__(self, repo: AuthRepository = Depends(), cache: CacheRepository = Depends()):
+    def __init__(
+        self, 
+        repo: AuthRepository = Depends(), 
+        cache: CacheRepository = Depends(),
+        rabbitmq: RabbitMQClient = Depends(get_rabbitmq_client)
+    ):
         self.repo = repo
         self.cache = cache
+        self.rabbitmq = rabbitmq
 
     @staticmethod
     def generate_tokens(user_id: str) -> dict:
@@ -42,6 +49,12 @@ class AuthService:
         new_user = await self.repo.create_user(
             payload.email, hashed_pwd, payload.full_name
         )
+
+        await self.rabbitmq.publish_event("events.user.created", {
+            "id": str(new_user["id"]),
+            "email": new_user["email"],
+            "full_name": new_user["full_name"]
+        })
 
         tokens = self.generate_tokens(str(new_user["id"]))
         return schemas.UserResponse(**new_user), tokens
@@ -96,7 +109,8 @@ class AuthService:
         if not deleted:
             raise UserNotFoundError("User not found.")
 
-        # Publish UserDeletedEvent to Redis
+        await self.rabbitmq.publish_event("events.user.deleted", {"user_id": str(user_id)})
+
         await self.cache.publish_user_deleted(str(user_id))
 
         # Delete user profile cache
@@ -119,7 +133,6 @@ class AuthService:
         await self.repo.create_reset_token(user["id"], reset_token, expires_at)
 
         # TODO: Integrate Email Service (Resend/SMTP) here
-        # E.g., await send_reset_email(user["email"], reset_token)
 
         return {"message": "If that email is registered, a password reset link has been sent."}
 
@@ -149,11 +162,9 @@ class AuthService:
         if not current_hashed_password:
             raise UserNotFoundError("User not found.")
 
-        # 1. Verify current password
         if not verify_password(payload.current_password, current_hashed_password):
             raise InvalidCredentialsError("Incorrect current password.")
 
-        # 2. Hash and update new password
         new_hashed = hash_password(payload.new_password)
         await self.repo.update_password(user_id, new_hashed)
         

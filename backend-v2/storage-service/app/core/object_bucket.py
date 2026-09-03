@@ -21,6 +21,9 @@ class StorageGateway(ABC):
     async def delete_object(self, object_name: str) -> None: pass
 
     @abstractmethod
+    async def batch_delete_objects(self, object_names: list[str]) -> None: pass
+
+    @abstractmethod
     async def generate_presigned_put_url(self, *, object_name: str, expires_in: int = 3600, content_type: str | None = None, metadata: dict[str, str] | None = None) -> str: pass
 
     @abstractmethod
@@ -82,6 +85,28 @@ class R2StorageGateway(StorageGateway):
                     logger.error(f"Failed to delete object {object_name}: {e}")
                     raise HTTPException(status_code=500, detail="Failed to delete file from storage.")
                 await asyncio.sleep(1)
+
+    async def batch_delete_objects(self, object_names: list[str]) -> None:
+        if not self.endpoint_url or not self.access_key or not self.secret_key or not object_names: return
+        
+        # S3 DeleteObjects allows a maximum of 1000 objects per request
+        chunk_size = 1000
+        max_retries = 5
+        
+        for i in range(0, len(object_names), chunk_size):
+            chunk = object_names[i:i + chunk_size]
+            delete_payload = {'Objects': [{'Key': key} for key in chunk], 'Quiet': True}
+            
+            for attempt in range(max_retries):
+                try:
+                    async with self._get_client() as client:
+                        await client.delete_objects(Bucket=self.bucket_name, Delete=delete_payload)
+                    break # Success for this chunk
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        logger.error(f"Failed to batch delete objects: {e}")
+                        raise HTTPException(status_code=500, detail="Failed to batch delete files from storage.")
+                    await asyncio.sleep(1)
 
     async def generate_presigned_put_url(self, *, object_name: str, expires_in: int = 3600, content_type: str | None = None, metadata: dict[str, str] | None = None) -> str:
         params: dict[str, object] = {"Bucket": self.bucket_name, "Key": object_name}

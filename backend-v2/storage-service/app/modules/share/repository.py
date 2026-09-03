@@ -9,6 +9,10 @@ from app.core.database import get_db_connection
 class ShareRepository:
     def __init__(self, conn: asyncpg.Connection = Depends(get_db_connection)):
         self.conn = conn
+
+    async def get_user_by_email(self, email: str) -> Optional[dict[str, Any]]:
+        row = await self.conn.fetchrow("SELECT id, email, full_name FROM storage.users WHERE email = $1", email)
+        return dict(row) if row else None
     
     async def check_is_owner(
         self, 

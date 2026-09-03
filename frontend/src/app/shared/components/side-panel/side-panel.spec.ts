@@ -16,15 +16,15 @@ describe('SidePanel', () => {
       isLoading: signal(false),
       usedStorageGB: signal(1.5),
       totalStorageGB: signal(15),
-      storagePercentage: signal(10)
+      storagePercentage: signal(10),
     };
 
     await TestBed.configureTestingModule({
       imports: [SidePanel],
       providers: [
         provideRouter([]),
-        { provide: StorageStateService, useValue: mockStorageState }
-      ]
+        { provide: StorageStateService, useValue: mockStorageState },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(SidePanel);
@@ -46,9 +46,9 @@ describe('SidePanel', () => {
   it('should emit navChange and navigate on nav click', () => {
     const emitSpy = vi.spyOn(component.navChange, 'emit');
     const navigateSpy = vi.spyOn(router, 'navigateByUrl');
-    
+
     component.onNavClick(component.navItems[0]); // Home
-    
+
     expect(emitSpy).toHaveBeenCalledWith('home');
     expect(navigateSpy).toHaveBeenCalledWith('/drive/root');
   });

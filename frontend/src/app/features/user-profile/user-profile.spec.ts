@@ -20,7 +20,7 @@ describe('UserProfile', () => {
       currentUser: signal({ full_name: 'Test User', email: 'test@nephos.com' }),
       logout: vi.fn().mockReturnValue(of({})),
       changePassword: vi.fn().mockReturnValue(of({ message: 'Success' })),
-      deleteAccount: vi.fn().mockReturnValue(of({ message: 'Success' }))
+      deleteAccount: vi.fn().mockReturnValue(of({ message: 'Success' })),
     };
 
     mockStorageState = {
@@ -28,7 +28,7 @@ describe('UserProfile', () => {
       usedStorageGB: signal(1),
       totalStorageGB: signal(10),
       storagePercentage: signal(10),
-      isLoading: signal(false)
+      isLoading: signal(false),
     };
 
     const mockUploadQueueService = {
@@ -36,7 +36,7 @@ describe('UserProfile', () => {
       activeUploadsCount: signal(0),
       hasActiveOrQueued: signal(false),
       totalProgressPercentage: signal(0),
-      queue: signal([])
+      queue: signal([]),
     };
 
     await TestBed.configureTestingModule({
@@ -46,7 +46,7 @@ describe('UserProfile', () => {
         { provide: AuthService, useValue: mockAuthService },
         { provide: FileOperationsService, useValue: {} },
         { provide: StorageStateService, useValue: mockStorageState },
-        { provide: UploadQueueService, useValue: mockUploadQueueService }
+        { provide: UploadQueueService, useValue: mockUploadQueueService },
       ],
     }).compileComponents();
 

@@ -91,23 +91,10 @@ class TrashService(BaseFileService):
             # gather files under this path
             files = await self.query_repo.list_files_under_path(folder_path)
     
-            # Attempt to delete each object's blob synchronously with retries. If any fail, abort and return error.
-            for f in files:
-                storage_key = f.get("storage_key")
-                if not storage_key:
-                    continue
-                last_exc: Exception | None = None
-                for attempt in range(1, 4):
-                    try:
-                        await self.storage.delete_object(storage_key)
-                        last_exc = None
-                        break
-                    except Exception as exc:
-                        last_exc = exc
-                        await asyncio.sleep(0.5 * attempt)
-    
-                if last_exc is not None:
-                    raise InfrastructureError(f"Failed to delete object {storage_key}; please try again later.")
+            # Batch delete from S3
+            storage_keys = [f.get("storage_key") for f in files if f.get("storage_key")]
+            if storage_keys:
+                await self.storage.batch_delete_objects(storage_keys)
     
             # All object deletions succeeded (or no storage_key). Delete folder rows and files under path atomically.
             try:
@@ -127,22 +114,11 @@ class TrashService(BaseFileService):
             owner_id = current_user["id"]
             files = await self.trash_repo.list_trashed_files_by_owner(owner_id)
     
+            storage_keys = [f.get("storage_key") for f in files if f.get("storage_key")]
+            if storage_keys:
+                await self.storage.batch_delete_objects(storage_keys)
+                
             for f in files:
-                storage_key = f.get("storage_key")
-                if storage_key:
-                    last_exc: Exception | None = None
-                    for attempt in range(1, 4):
-                        try:
-                            await self.storage.delete_object(storage_key)
-                            last_exc = None
-                            break
-                        except Exception as exc:
-                            last_exc = exc
-                            await asyncio.sleep(0.5 * attempt)
-    
-                    if last_exc is not None:
-                        # stop and return error; do not remove DB rows for failed objects
-                        raise InfrastructureError(f"Failed to delete object {storage_key}; please try again later.")
     
                 # delete DB row for this file
                 try:
@@ -195,7 +171,7 @@ class TrashService(BaseFileService):
                 restored = await with_db_retry(_perform_operation)
             except DuplicateRecordError:
                 raise DuplicateRecordError("Name collision during restore; please retry.")
-            except InvalidOperationError, InfrastructureError:
+            except (InvalidOperationError, InfrastructureError):
                 raise DuplicateRecordError("Deadlock during restore; please retry.")
     
             if not restored:
@@ -243,7 +219,7 @@ class TrashService(BaseFileService):
                 restored = await with_db_retry(_perform_operation)
             except DuplicateRecordError:
                 raise DuplicateRecordError("Name collision during restore; please retry.")
-            except InvalidOperationError, InfrastructureError:
+            except (InvalidOperationError, InfrastructureError):
                 raise DuplicateRecordError("Deadlock during restore; please retry.")
     
             if not restored:

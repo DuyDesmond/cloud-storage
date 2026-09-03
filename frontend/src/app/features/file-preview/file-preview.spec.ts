@@ -15,17 +15,22 @@ describe('FilePreview', () => {
 
   // Reconfigures TestBed to inject varying MAT_DIALOG_DATA per test[cite: 4]
   async function setupComponent(mimeType: string) {
-    fileServiceSpy = { downloadFile: vi.fn().mockReturnValue(of(new Blob(['mock data']))) };
+    fileServiceSpy = {
+      downloadFile: vi.fn().mockReturnValue(of(new Blob(['mock data']))),
+    };
     dialogRefSpy = { close: vi.fn() };
     sanitizerSpy = vi.fn();
-    
+
     await TestBed.configureTestingModule({
       imports: [FilePreview],
       providers: [
         { provide: FileOperationsService, useValue: fileServiceSpy },
         { provide: MatDialogRef, useValue: dialogRefSpy },
-        { provide: MAT_DIALOG_DATA, useValue: { item: { id: 'file-123', name: 'doc', mimeType } } }
-      ]
+        {
+          provide: MAT_DIALOG_DATA,
+          useValue: { item: { id: 'file-123', name: 'doc', mimeType } },
+        },
+      ],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(FilePreview);
@@ -39,8 +44,12 @@ describe('FilePreview', () => {
   let revokeUrlSpy: any;
 
   beforeEach(() => {
-    createUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
-    revokeUrlSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    createUrlSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:mock-url');
+    revokeUrlSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -69,7 +78,8 @@ describe('FilePreview', () => {
   });
 
   it('should sanitize the URL and update signals on successful download', async () => {
-    const { component, fixture, sanitizerSpy } = await setupComponent('image/jpeg');
+    const { component, fixture, sanitizerSpy } =
+      await setupComponent('image/jpeg');
     fixture.detectChanges();
 
     expect(fileServiceSpy.downloadFile).toHaveBeenCalledWith('file-123');
@@ -84,7 +94,9 @@ describe('FilePreview', () => {
 
   it('should display error state if download fails', async () => {
     const { component, fixture } = await setupComponent('text/plain');
-    fileServiceSpy.downloadFile.mockReturnValue(throwError(() => new Error('API failure')));
+    fileServiceSpy.downloadFile.mockReturnValue(
+      throwError(() => new Error('API failure')),
+    );
 
     fixture.detectChanges();
 
@@ -92,7 +104,9 @@ describe('FilePreview', () => {
     expect(component.isLoading()).toBe(false);
     expect(component.previewUrl()).toBeNull();
 
-    const errorContainer = fixture.debugElement.query(By.css('.state-container.error'));
+    const errorContainer = fixture.debugElement.query(
+      By.css('.state-container.error'),
+    );
     expect(errorContainer).toBeTruthy();
   });
 

@@ -23,7 +23,7 @@ describe('Login', () => {
       providers: [
         { provide: AuthService, useValue: authServiceSpy },
         { provide: Router, useValue: routerSpy },
-        { provide: ActivatedRoute, useValue: {} }
+        { provide: ActivatedRoute, useValue: {} },
       ],
     }).compileComponents();
 
@@ -43,7 +43,10 @@ describe('Login', () => {
   });
 
   it('should mark all controls as touched if form is invalid on submit', () => {
-    const markAllAsTouchedSpy = vi.spyOn(component.loginForm, 'markAllAsTouched');
+    const markAllAsTouchedSpy = vi.spyOn(
+      component.loginForm,
+      'markAllAsTouched',
+    );
     component.onSubmit();
 
     expect(markAllAsTouchedSpy).toHaveBeenCalled();
@@ -55,7 +58,7 @@ describe('Login', () => {
 
     component.loginForm.patchValue({
       email: 'test@nephos.com',
-      password: 'password123'
+      password: 'password123',
     });
 
     component.onSubmit();
@@ -65,17 +68,21 @@ describe('Login', () => {
   });
 
   it('should set an error message signal on failed login', () => {
-    authServiceSpy.login.mockReturnValue(throwError(() => new Error('Auth failed')));
+    authServiceSpy.login.mockReturnValue(
+      throwError(() => new Error('Auth failed')),
+    );
 
     component.loginForm.patchValue({
       email: 'test@nephos.com',
-      password: 'password123'
+      password: 'password123',
     });
 
     component.onSubmit();
 
     expect(component.isLoading()).toBe(false);
-    expect(component.errorMessage()).toBe('Invalid email or password. Please try again.');
+    expect(component.errorMessage()).toBe(
+      'Invalid email or password. Please try again.',
+    );
   });
 
   // --- New DOM Rendering Tests ---
@@ -95,7 +102,9 @@ describe('Login', () => {
     fixture.detectChanges();
 
     const spinner = fixture.debugElement.query(By.css('mat-spinner'));
-    const buttonContent = fixture.debugElement.query(By.css('.button-content')).nativeElement;
+    const buttonContent = fixture.debugElement.query(
+      By.css('.button-content'),
+    ).nativeElement;
 
     expect(spinner).toBeTruthy();
     expect(buttonContent.textContent).toContain('Signing In...');

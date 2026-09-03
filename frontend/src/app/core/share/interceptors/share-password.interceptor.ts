@@ -2,7 +2,7 @@ import {
   HttpInterceptorFn,
   HttpRequest,
   HttpHandlerFn,
-  HttpErrorResponse
+  HttpErrorResponse,
 } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { environment } from '../../../../environments/environment';
@@ -13,7 +13,7 @@ import {
   throwError,
   of,
   Observable,
-  filter
+  filter,
 } from 'rxjs';
 import { SharePasswordService } from '../services/share-password.service';
 import { PasswordPromptComponent } from '../../../shared/components/password-prompt/password-prompt';
@@ -32,15 +32,19 @@ export const sharePasswordInterceptor: HttpInterceptorFn = (req, next) => {
 
   if (password && req.url.includes(`${environment.apiStr}/storage`)) {
     modifiedReq = req.clone({
-      setHeaders: { 'X-Share-Password': password }
+      setHeaders: { 'X-Share-Password': password },
     });
   }
 
   return next(modifiedReq).pipe(
     catchError((err: HttpErrorResponse) => {
       // check if error is related to share password
-      if (err.status === 401 && err.error?.detail && (err.error.detail === 'PASSWORD_REQUIRED' || err.error.detail === 'INVALID_PASSWORD')) {
-
+      if (
+        err.status === 401 &&
+        err.error?.detail &&
+        (err.error.detail === 'PASSWORD_REQUIRED' ||
+          err.error.detail === 'INVALID_PASSWORD')
+      ) {
         // if INVALID_PASSWORD, clear the wrong one
         if (err.error.detail === 'INVALID_PASSWORD') {
           passwordService.clearPassword();
@@ -51,7 +55,7 @@ export const sharePasswordInterceptor: HttpInterceptorFn = (req, next) => {
           passwordSubject.next(null);
 
           return promptForPassword(dialog).pipe(
-            switchMap(newPassword => {
+            switchMap((newPassword) => {
               isPrompting = false;
               if (!newPassword) {
                 passwordSubject.error(err);
@@ -61,39 +65,39 @@ export const sharePasswordInterceptor: HttpInterceptorFn = (req, next) => {
               passwordSubject.next(newPassword);
 
               const retryReq = req.clone({
-                setHeaders: { 'X-Share-Password': newPassword }
+                setHeaders: { 'X-Share-Password': newPassword },
               });
               return next(retryReq);
             }),
             catchError((promptErr) => {
               isPrompting = false;
               return throwError(() => promptErr);
-            })
+            }),
           );
         } else {
           return passwordSubject.pipe(
-            filter(token => token !== null),
+            filter((token) => token !== null),
             take(1),
-            switchMap(newPassword => {
+            switchMap((newPassword) => {
               const retryReq = req.clone({
-                setHeaders: { 'X-Share-Password': newPassword as string }
+                setHeaders: { 'X-Share-Password': newPassword as string },
               });
               return next(retryReq);
             }),
-            catchError(() => throwError(() => err))
+            catchError(() => throwError(() => err)),
           );
         }
       }
 
       return throwError(() => err);
-    })
+    }),
   );
 };
 
 function promptForPassword(dialog: MatDialog): Observable<string | null> {
   const dialogRef = dialog.open(PasswordPromptComponent, {
     width: '400px',
-    disableClose: true
+    disableClose: true,
   });
 
   return dialogRef.afterClosed();

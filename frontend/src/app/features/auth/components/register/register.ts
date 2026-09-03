@@ -93,10 +93,7 @@ export class Register {
     const termsAccepted = Boolean(terms);
 
     return (
-      allFieldsFilled &&
-      passwordsMatch &&
-      termsAccepted &&
-      status === 'VALID'
+      allFieldsFilled && passwordsMatch && termsAccepted && status === 'VALID'
     );
   });
 
@@ -126,7 +123,8 @@ export class Register {
 
     if (!username || !email || !password) return;
 
-    this.authService.register(username, email, password)
+    this.authService
+      .register(username, email, password)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (user) => {

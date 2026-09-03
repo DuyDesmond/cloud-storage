@@ -14,7 +14,7 @@ describe('Landing Component', () => {
       imports: [Landing],
       providers: [
         // Provide mock routing context for the RouterLink directives
-        provideRouter([])
+        provideRouter([]),
       ],
     }).compileComponents();
 
@@ -33,7 +33,9 @@ describe('Landing Component', () => {
   });
 
   it('should render the sign-in link with the correct route', () => {
-    const signinLink = fixture.debugElement.query(By.css('a[routerLink="/login"]'));
+    const signinLink = fixture.debugElement.query(
+      By.css('a[routerLink="/login"]'),
+    );
 
     expect(signinLink).toBeTruthy();
     expect(signinLink.nativeElement.textContent).toContain('Sign in');
@@ -41,10 +43,16 @@ describe('Landing Component', () => {
 
   it('should render multiple registration links with the correct route', () => {
     // The template contains one in the header and one in the main CTA
-    const registerLinks = fixture.debugElement.queryAll(By.css('a[routerLink="/register"]'));
+    const registerLinks = fixture.debugElement.queryAll(
+      By.css('a[routerLink="/register"]'),
+    );
 
     expect(registerLinks.length).toBe(2);
-    expect(registerLinks[0].nativeElement.textContent).toContain('Create account');
-    expect(registerLinks[1].nativeElement.textContent).toContain('Start for Free');
+    expect(registerLinks[0].nativeElement.textContent).toContain(
+      'Create account',
+    );
+    expect(registerLinks[1].nativeElement.textContent).toContain(
+      'Start for Free',
+    );
   });
 });

@@ -10,7 +10,7 @@ describe('DashboardHeader', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [DashboardHeader],
-      providers: [provideRouter([])]
+      providers: [provideRouter([])],
     }).compileComponents();
 
     fixture = TestBed.createComponent(DashboardHeader);
@@ -25,11 +25,11 @@ describe('DashboardHeader', () => {
   it('should emit searchChange on search input change', () => {
     const emitSpy = vi.spyOn(component.searchChange, 'emit');
     const inputElement = fixture.nativeElement.querySelector('input');
-    
+
     inputElement.value = 'test search';
     inputElement.dispatchEvent(new Event('input'));
     fixture.detectChanges();
-    
+
     expect(emitSpy).toHaveBeenCalledWith('test search');
   });
 });

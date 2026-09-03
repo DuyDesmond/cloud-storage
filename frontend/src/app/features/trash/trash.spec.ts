@@ -18,7 +18,7 @@ describe('Trash', () => {
   beforeEach(async () => {
     mockFileService = {
       getTrashedContents: vi.fn().mockReturnValue(of([])),
-      emptyTrash: vi.fn().mockReturnValue(of({ message: 'Success' }))
+      emptyTrash: vi.fn().mockReturnValue(of({ message: 'Success' })),
     };
 
     mockStorageState = {
@@ -27,7 +27,7 @@ describe('Trash', () => {
       usedStorageGB: signal(1),
       totalStorageGB: signal(10),
       storagePercentage: signal(10),
-      isLoading: signal(false)
+      isLoading: signal(false),
     };
 
     await TestBed.configureTestingModule({
@@ -36,9 +36,21 @@ describe('Trash', () => {
         provideRouter([]),
         { provide: FileOperationsService, useValue: mockFileService },
         { provide: StorageStateService, useValue: mockStorageState },
-        { provide: AuthService, useValue: { currentUser: vi.fn().mockReturnValue(null) } },
-        { provide: UploadQueueService, useValue: { onFileUploaded: new Subject(), activeUploadsCount: vi.fn().mockReturnValue(0), hasActiveOrQueued: vi.fn().mockReturnValue(false), totalProgressPercentage: vi.fn().mockReturnValue(0), queue: vi.fn().mockReturnValue([]) } }
-      ]
+        {
+          provide: AuthService,
+          useValue: { currentUser: vi.fn().mockReturnValue(null) },
+        },
+        {
+          provide: UploadQueueService,
+          useValue: {
+            onFileUploaded: new Subject(),
+            activeUploadsCount: vi.fn().mockReturnValue(0),
+            hasActiveOrQueued: vi.fn().mockReturnValue(false),
+            totalProgressPercentage: vi.fn().mockReturnValue(0),
+            queue: vi.fn().mockReturnValue([]),
+          },
+        },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(Trash);

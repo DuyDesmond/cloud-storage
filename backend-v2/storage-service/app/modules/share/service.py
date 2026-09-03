@@ -29,12 +29,12 @@ class ShareService:
     async def share_with_user(self, request: schemas.ShareWithUserRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
         await self._verify_owner(request.target_id, request.is_file, owner_id)
         
-        # Look up user by email via internal API
-        grantee = await self.auth_client.get_user_by_email(request.email)
+        # Look up user by email via local read-replica table
+        grantee = await self.repo.get_user_by_email(request.email)
         if not grantee:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with this email not found.")
             
-        grantee_id = uuid.UUID(grantee['id'])
+        grantee_id = grantee['id']
         if grantee_id == owner_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot share file with yourself.")
             
@@ -45,11 +45,11 @@ class ShareService:
     async def revoke_user_share(self, request: schemas.RevokeUserShareRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
         await self._verify_owner(request.target_id, request.is_file, owner_id)
         
-        grantee = await self.auth_client.get_user_by_email(request.email)
+        grantee = await self.repo.get_user_by_email(request.email)
         if not grantee:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
             
-        await self.repo.revoke_user_share(request.target_id, request.is_file, uuid.UUID(grantee['id']))
+        await self.repo.revoke_user_share(request.target_id, request.is_file, grantee['id'])
         return schemas.GenericMessageResponse(message="Share revoked successfully")
 
     async def set_public_link(self, request: schemas.SetPublicLinkRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
@@ -109,7 +109,8 @@ class ShareService:
             # Cache for 10 minutes to protect against viral traffic bursts
             await self.cache.set_share_acl(share_token, acl, ttl_seconds=600)
         
-        await self.repo.upsert_public_link_visitor(user_id, acl['id'])
+        if user_id and not (acl.get('created_by') and str(user_id) == str(acl['created_by'])):
+            await self.repo.upsert_public_link_visitor(user_id, acl['id'])
         
         return {
             "message": "Link visited successfully",

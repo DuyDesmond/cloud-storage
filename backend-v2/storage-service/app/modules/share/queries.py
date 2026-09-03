@@ -80,7 +80,7 @@ GET_SHARE_STATE_FILE = """
     SELECT a.principal_type, a.grantee_id, a.share_token, a.password_hash, a.permission, a.revoked_at,
            u.email, u.full_name
     FROM storage.acl_entries a
-    LEFT JOIN auth.users u ON a.grantee_id = u.id
+    LEFT JOIN storage.users u ON a.grantee_id = u.id
     WHERE a.file_id = $1 AND a.revoked_at IS NULL
 """
 
@@ -88,7 +88,7 @@ GET_SHARE_STATE_FOLDER = """
     SELECT a.principal_type, a.grantee_id, a.share_token, a.password_hash, a.permission, a.revoked_at,
            u.email, u.full_name
     FROM storage.acl_entries a
-    LEFT JOIN auth.users u ON a.grantee_id = u.id
+    LEFT JOIN storage.users u ON a.grantee_id = u.id
     WHERE a.folder_id = $1 AND a.revoked_at IS NULL
 """
 
@@ -101,7 +101,7 @@ CHECK_OWNER_FOLDER = """
 """
 
 GET_ACL_BY_TOKEN = """
-    SELECT a.id, a.file_id, a.folder_id, a.principal_type, a.permission, a.password_hash,
+    SELECT a.id, a.file_id, a.folder_id, a.principal_type, a.permission, a.password_hash, a.created_by,
            f.file_name, f.mime_type, f.size_bytes
     FROM storage.acl_entries a
     LEFT JOIN storage.files f ON a.file_id = f.id

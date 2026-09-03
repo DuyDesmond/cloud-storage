@@ -7,7 +7,7 @@ import { BreadcrumbItem } from '../../../core/file-operations/services/file-oper
   selector: 'app-breadcrumb',
   imports: [RouterModule, MatIconModule],
   templateUrl: './breadcrumb.html',
-  styleUrl: './breadcrumb.scss'
+  styleUrl: './breadcrumb.scss',
 })
 export class Breadcrumb {
   breadcrumbs = input<BreadcrumbItem[]>([]);
@@ -17,19 +17,25 @@ export class Breadcrumb {
 
   homeLink = computed(() => {
     switch (this.section()) {
-      case 'shared-with-me': return '/drive/shared-with-me';
-      case 'trash': return '/trash';
+      case 'shared-with-me':
+        return '/drive/shared-with-me';
+      case 'trash':
+        return '/trash';
       case 'drive':
-      default: return '/drive/root';
+      default:
+        return '/drive/root';
     }
   });
 
   homeIcon = computed(() => {
     switch (this.section()) {
-      case 'shared-with-me': return 'group';
-      case 'trash': return 'delete';
+      case 'shared-with-me':
+        return 'group';
+      case 'trash':
+        return 'delete';
       case 'drive':
-      default: return 'home';
+      default:
+        return 'home';
     }
   });
 }

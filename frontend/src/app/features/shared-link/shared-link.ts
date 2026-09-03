@@ -14,7 +14,7 @@ import { catchError, of, switchMap } from 'rxjs';
   selector: 'app-shared-link',
   imports: [MatProgressSpinnerModule, MatSnackBarModule],
   templateUrl: './shared-link.html',
-  styleUrl: './shared-link.scss'
+  styleUrl: './shared-link.scss',
 })
 export class SharedLinkComponent implements OnInit {
   private route = inject(ActivatedRoute);
@@ -37,60 +37,68 @@ export class SharedLinkComponent implements OnInit {
       return;
     }
 
-    this.authService.getProfile().pipe(
-      catchError(() => of(null)),
-      switchMap((user) => {
-        return this.shareService.visitPublicLink(token);
-      })
-    ).subscribe({
-      next: (res: any) => {
-        this.isLoading.set(false);
-        if (res.is_file) {
-          if (this.currentUser()) {
-            this.snackBar.open('File added to Shared with me.', 'Close', { duration: 3000 });
-            this.router.navigate(['/drive/shared-with-me']);
+    this.authService
+      .getProfile()
+      .pipe(
+        catchError(() => of(null)),
+        switchMap((user) => {
+          return this.shareService.visitPublicLink(token);
+        }),
+      )
+      .subscribe({
+        next: (res: any) => {
+          this.isLoading.set(false);
+          if (res.is_file) {
+            if (this.currentUser()) {
+              this.snackBar.open('File added to Shared with me.', 'Close', {
+                duration: 3000,
+              });
+              this.router.navigate(['/drive/shared-with-me']);
+            } else {
+              const fileItem: DriveFileItem = {
+                id: res.target_id,
+                ownerId: '',
+                parentFolderId: null,
+                path: '',
+                name: res.file_name || 'Shared File',
+                itemType: 'file',
+                storageKey: '',
+                sizeBytes: res.size_bytes || 0,
+                mimeType: res.mime_type || '',
+                contentHash: null,
+                isTrashed: false,
+                trashedAt: null,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              this.dialog.open(FilePreview, {
+                width: '80vw',
+                height: '80vh',
+                maxWidth: '1200px',
+                panelClass: 'preview-dialog-panel',
+                data: { item: fileItem },
+              });
+            }
           } else {
-            const fileItem: DriveFileItem = {
-              id: res.target_id,
-              ownerId: '',
-              parentFolderId: null,
-              path: '',
-              name: res.file_name || 'Shared File',
-              itemType: 'file',
-              storageKey: '',
-              sizeBytes: res.size_bytes || 0,
-              mimeType: res.mime_type || '',
-              contentHash: null,
-              isTrashed: false,
-              trashedAt: null,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            };
-            this.dialog.open(FilePreview, {
-              width: '80vw',
-              height: '80vh',
-              maxWidth: '1200px',
-              panelClass: 'preview-dialog-panel',
-              data: { item: fileItem },
-            });
+            if (this.currentUser()) {
+              this.router.navigate([
+                '/drive/shared-with-me/folder',
+                res.target_id,
+              ]);
+            } else {
+              this.error.set('Folders cannot be viewed.');
+            }
           }
-        } else {
-          if (this.currentUser()) {
-            this.router.navigate(['/drive/shared-with-me/folder', res.target_id]);
+        },
+        error: (err) => {
+          this.isLoading.set(false);
+          if (err.status === 404) {
+            this.error.set('This link is invalid or has been revoked.');
           } else {
-            this.error.set('Folders cannot be viewed anonymously yet.');
+            this.error.set('Failed to access link.');
           }
-        }
-      },
-      error: (err) => {
-        this.isLoading.set(false);
-        if (err.status === 404) {
-          this.error.set('This link is invalid or has been revoked.');
-        } else {
-          this.error.set('Failed to access link.');
-        }
-      }
-    });
+        },
+      });
   }
 
   goHome(): void {

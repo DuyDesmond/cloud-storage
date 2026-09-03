@@ -1,4 +1,11 @@
-import { Component, OnInit, inject, signal, OnDestroy, DestroyRef } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  inject,
+  signal,
+  OnDestroy,
+  DestroyRef,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -11,7 +18,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDividerModule } from '@angular/material/divider';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { DriveItem, DriveFileItem } from '../../shared/components/drive-item-card/drive-item.model';
+import {
+  DriveItem,
+  DriveFileItem,
+} from '../../shared/components/drive-item-card/drive-item.model';
 import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
 
 @Component({
@@ -21,7 +31,7 @@ import { FileOperationsService } from '../../core/file-operations/services/file-
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
-    MatDividerModule
+    MatDividerModule,
   ],
   templateUrl: './file-preview.html',
   styleUrl: './file-preview.scss',
@@ -39,7 +49,9 @@ export class FilePreview implements OnInit, OnDestroy {
   hasError = signal(false);
   previewUrl = signal<SafeResourceUrl | null>(null);
   rawUrl: string | null = null;
-  fileType = signal<'image' | 'video' | 'pdf' | 'text' | 'unsupported'>('unsupported');
+  fileType = signal<'image' | 'video' | 'pdf' | 'text' | 'unsupported'>(
+    'unsupported',
+  );
 
   constructor() {
     this.item = this.data.item as DriveFileItem;
@@ -52,20 +64,23 @@ export class FilePreview implements OnInit, OnDestroy {
       return;
     }
 
-    this.fileService.downloadFile(this.item.id)
+    this.fileService
+      .downloadFile(this.item.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (blob) => {
           this.rawUrl = URL.createObjectURL(blob);
           // Trust the URL so Angular can bind it to iframe/embed/img tags
-          this.previewUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this.rawUrl));
+          this.previewUrl.set(
+            this.sanitizer.bypassSecurityTrustResourceUrl(this.rawUrl),
+          );
           this.isLoading.set(false);
         },
         error: (err: unknown) => {
           console.error('Failed to load file preview', err);
           this.hasError.set(true);
           this.isLoading.set(false);
-        }
+        },
       });
   }
 
@@ -83,7 +98,11 @@ export class FilePreview implements OnInit, OnDestroy {
       this.fileType.set('video');
     } else if (mime === 'application/pdf') {
       this.fileType.set('pdf');
-    } else if (mime.startsWith('text/') || mime === 'application/json' || mime === 'application/javascript') {
+    } else if (
+      mime.startsWith('text/') ||
+      mime === 'application/json' ||
+      mime === 'application/javascript'
+    ) {
       this.fileType.set('text');
     } else {
       this.fileType.set('unsupported');

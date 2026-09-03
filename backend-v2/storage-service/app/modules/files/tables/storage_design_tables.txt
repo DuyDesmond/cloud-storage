@@ -59,6 +59,19 @@ END $$;
 
 CREATE SCHEMA IF NOT EXISTS storage;
 
+CREATE TABLE IF NOT EXISTS storage.users (
+    id UUID PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    full_name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS storage.deletion_jobs (
+    user_id UUID PRIMARY KEY,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    retry_count INT NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS storage.user_quotas (
     user_id UUID PRIMARY KEY,
     storage_used BIGINT NOT NULL DEFAULT 0,

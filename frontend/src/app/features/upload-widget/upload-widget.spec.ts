@@ -8,9 +8,8 @@ describe('UploadWidget', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [UploadWidget]
-    })
-    .compileComponents();
+      imports: [UploadWidget],
+    }).compileComponents();
 
     fixture = TestBed.createComponent(UploadWidget);
     component = fixture.componentInstance;

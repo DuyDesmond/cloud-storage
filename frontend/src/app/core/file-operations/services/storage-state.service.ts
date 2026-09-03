@@ -41,10 +41,7 @@ export class StorageStateService {
     this.fileService.getStorageUsage().subscribe({
       next: ({ used_bytes, total_bytes }) => {
         this.usedBytes.set(used_bytes);
-        this.totalBytes.set(
-          total_bytes ||
-            DEFAULT_STORAGE_QUOTA_BYTES,
-        );
+        this.totalBytes.set(total_bytes || DEFAULT_STORAGE_QUOTA_BYTES);
         this.isLoading.set(false);
       },
       error: () => {

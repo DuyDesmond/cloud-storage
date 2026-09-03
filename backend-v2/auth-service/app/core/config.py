@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     R2_BUCKET_NAME: str = "nephos"
     
     REDIS_URL: str = "redis://localhost:6379/0"
+    RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672/"
 
     # Load from .env file
     model_config = SettingsConfigDict(

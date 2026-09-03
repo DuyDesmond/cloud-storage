@@ -17,15 +17,17 @@ describe('SharedLinkComponent', () => {
   beforeEach(async () => {
     mockAuthService = {
       currentUser: signal({ full_name: 'Test', email: 'test@test.com' }),
-      getProfile: vi.fn().mockReturnValue(of({ full_name: 'Test', email: 'test@test.com' }))
+      getProfile: vi
+        .fn()
+        .mockReturnValue(of({ full_name: 'Test', email: 'test@test.com' })),
     };
 
     mockShareService = {
-      visitPublicLink: vi.fn().mockReturnValue(of({ is_file: true }))
+      visitPublicLink: vi.fn().mockReturnValue(of({ is_file: true })),
     };
 
     mockRouter = {
-      navigate: vi.fn()
+      navigate: vi.fn(),
     };
 
     await TestBed.configureTestingModule({
@@ -35,11 +37,11 @@ describe('SharedLinkComponent', () => {
         { provide: AuthService, useValue: mockAuthService },
         { provide: ShareService, useValue: mockShareService },
         { provide: Router, useValue: mockRouter },
-        { 
-          provide: ActivatedRoute, 
-          useValue: { snapshot: { paramMap: { get: () => 'fake-token' } } } 
-        }
-      ]
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: { get: () => 'fake-token' } } },
+        },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(SharedLinkComponent);

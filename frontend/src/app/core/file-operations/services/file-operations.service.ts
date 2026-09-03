@@ -181,15 +181,20 @@ export class FileOperationsService {
   getSharedWithMe(): Observable<StorageContentResponse> {
     return this.http.get<StorageContentResponse>(
       FILE_OPERATION_ENDPOINTS.getSharedWithMe,
-      { withCredentials: true }
+      { withCredentials: true },
     );
   }
 
-  getBreadcrumbs(targetId: string, isFile: boolean = false): Observable<BreadcrumbsResponse> {
-    const params = new HttpParams().set('target_id', targetId).set('is_file', isFile.toString());
+  getBreadcrumbs(
+    targetId: string,
+    isFile: boolean = false,
+  ): Observable<BreadcrumbsResponse> {
+    const params = new HttpParams()
+      .set('target_id', targetId)
+      .set('is_file', isFile.toString());
     return this.http.get<BreadcrumbsResponse>(
       FILE_OPERATION_ENDPOINTS.getBreadcrumbs,
-      { params, withCredentials: true }
+      { params, withCredentials: true },
     );
   }
 

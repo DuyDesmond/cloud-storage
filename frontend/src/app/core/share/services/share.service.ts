@@ -30,30 +30,76 @@ export class ShareService {
   getShareState(targetId: string, isFile: boolean): Observable<ShareState> {
     return this.http.get<ShareState>(`${this.apiUrl}/state`, {
       params: { target_id: targetId, is_file: isFile },
-      withCredentials: true
+      withCredentials: true,
     });
   }
 
-  shareWithUser(targetId: string, isFile: boolean, email: string, permission: 'view' | 'edit', password?: string): Observable<{message: string}> {
-    return this.http.post<{message: string}>(`${this.apiUrl}/user`, {
-      target_id: targetId, is_file: isFile, email, permission, password: password || null
-    }, { withCredentials: true });
+  shareWithUser(
+    targetId: string,
+    isFile: boolean,
+    email: string,
+    permission: 'view' | 'edit',
+    password?: string,
+  ): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(
+      `${this.apiUrl}/user`,
+      {
+        target_id: targetId,
+        is_file: isFile,
+        email,
+        permission,
+        password: password || null,
+      },
+      { withCredentials: true },
+    );
   }
 
-  revokeUserShare(targetId: string, isFile: boolean, email: string): Observable<{message: string}> {
-    return this.http.delete<{message: string}>(`${this.apiUrl}/user`, {
+  revokeUserShare(
+    targetId: string,
+    isFile: boolean,
+    email: string,
+  ): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.apiUrl}/user`, {
       body: { target_id: targetId, is_file: isFile, email },
-      withCredentials: true
+      withCredentials: true,
     });
   }
 
-  setPublicLink(targetId: string, isFile: boolean, enabled: boolean, permission: 'view' | 'edit', password?: string): Observable<{message: string}> {
-    return this.http.post<{message: string}>(`${this.apiUrl}/public`, {
-      target_id: targetId, is_file: isFile, enabled, permission, password: password || null
-    }, { withCredentials: true });
+  setPublicLink(
+    targetId: string,
+    isFile: boolean,
+    enabled: boolean,
+    permission: 'view' | 'edit',
+    password?: string,
+  ): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(
+      `${this.apiUrl}/public`,
+      {
+        target_id: targetId,
+        is_file: isFile,
+        enabled,
+        permission,
+        password: password || null,
+      },
+      { withCredentials: true },
+    );
   }
 
-  visitPublicLink(shareToken: string): Observable<{message: string, is_file: boolean, target_id: string}> {
-    return this.http.post<{message: string, is_file: boolean, target_id: string}>(`${this.apiUrl}/visit/${shareToken}`, {}, { withCredentials: true });
+  visitPublicLink(shareToken: string): Observable<{
+    message: string;
+    is_file: boolean;
+    target_id: string;
+    file_name?: string;
+    mime_type?: string;
+    size_bytes?: number;
+  }> {
+    return this.http.post<{
+      message: string;
+      is_file: boolean;
+      target_id: string;
+      file_name?: string;
+      mime_type?: string;
+      size_bytes?: number;
+    }>(`${this.apiUrl}/visit/${shareToken}`, {}, { withCredentials: true });
   }
 }

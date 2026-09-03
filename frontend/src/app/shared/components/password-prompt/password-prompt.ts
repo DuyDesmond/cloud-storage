@@ -14,18 +14,18 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
     MatInputModule,
     MatFormFieldModule,
     MatIconModule,
-    ReactiveFormsModule
+    ReactiveFormsModule,
   ],
   templateUrl: './password-prompt.html',
-  styleUrl: './password-prompt.scss'
+  styleUrl: './password-prompt.scss',
 })
 export class PasswordPromptComponent {
   private dialogRef = inject(MatDialogRef<PasswordPromptComponent>);
   private fb = inject(FormBuilder);
-  
+
   hidePassword = true;
   form = this.fb.group({
-    password: ['', Validators.required]
+    password: ['', Validators.required],
   });
 
   submit() {
