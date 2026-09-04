@@ -29,8 +29,32 @@ describe('PublicShareComponent', () => {
 
     mockFileOps = {
       getStorageContents: vi.fn().mockReturnValue(of({
-        folders: [],
-        files: []
+        folders: [{
+          id: 'folder-123',
+          owner_id: 'owner-1',
+          parent_folder_id: 'test-folder-id',
+          folder_name: 'Child folder',
+          path: 'root.child',
+          is_trashed: false,
+          trashed_at: null,
+          created_at: '2026-09-01T10:00:00Z',
+          updated_at: '2026-09-02T10:00:00Z',
+        }],
+        files: [{
+          id: 'file-123',
+          owner_id: 'owner-1',
+          parent_folder_id: 'test-folder-id',
+          file_name: 'child.txt',
+          storage_key: 'files/child.txt',
+          size_bytes: 2048,
+          mime_type: 'text/plain',
+          content_hash: null,
+          path: 'root.child.file',
+          is_trashed: false,
+          trashed_at: null,
+          created_at: '2026-09-01T10:00:00Z',
+          updated_at: '2026-09-02T10:00:00Z',
+        }]
       })),
       getBreadcrumbs: vi.fn().mockReturnValue(of({
         breadcrumbs: []
@@ -46,13 +70,13 @@ describe('PublicShareComponent', () => {
       imports: [PublicShareComponent],
       providers: [
         { provide: Router, useValue: mockRouter },
-        { 
-          provide: ActivatedRoute, 
-          useValue: { 
-            paramMap: of({ 
-              get: (key: string) => key === 'token' ? 'test-token' : null 
-            }) 
-          } 
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            paramMap: of({
+              get: (key: string) => key === 'token' ? 'test-token' : null
+            })
+          }
         },
         { provide: ShareService, useValue: mockShareService },
         { provide: FileOperationsService, useValue: mockFileOps },
@@ -81,9 +105,27 @@ describe('PublicShareComponent', () => {
     expect(mockFileOps.downloadFile).toHaveBeenCalledWith('file-123');
   });
 
+  it('should normalize child item fields for the item cards', () => {
+    const items = component.items();
+    const folder: any = items.find((item) => item.itemType === 'folder');
+    const file: any = items.find((item) => item.itemType === 'file');
+
+    expect(folder).toMatchObject({
+      name: 'Child folder',
+      createdAt: '2026-09-01T10:00:00Z',
+      updatedAt: '2026-09-02T10:00:00Z',
+    });
+    expect(file).toMatchObject({
+      name: 'child.txt',
+      sizeBytes: 2048,
+      createdAt: '2026-09-01T10:00:00Z',
+      updatedAt: '2026-09-02T10:00:00Z',
+    });
+  });
+
   it('should navigate to subfolder when onOpenItem is called for a folder', () => {
     const item: any = { id: 'folder-123', itemType: 'folder' };
     component.onOpenItem(item);
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['/shared/folder', 'folder-123']);
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['/public-share/folder', 'folder-123']);
   });
 });

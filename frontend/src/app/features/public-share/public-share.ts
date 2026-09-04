@@ -123,13 +123,33 @@ export class PublicShareComponent implements OnInit {
 
     this.fileOps.getStorageContents(folderId).subscribe({
       next: (res) => {
-        const folders: DriveFolderItem[] = res.folders.map((f: any) => ({
-          ...f,
+        const folders: DriveFolderItem[] = (res.folders ?? []).map((f: any) => ({
+          id: f.id,
+          ownerId: f.owner_id,
+          parentFolderId: f.parent_folder_id,
+          path: f.path,
+          name: f.folder_name,
           itemType: 'folder',
+          isTrashed: f.is_trashed,
+          trashedAt: f.trashed_at,
+          createdAt: f.created_at,
+          updatedAt: f.updated_at,
         }));
-        const files: DriveFileItem[] = res.files.map((f: any) => ({
-          ...f,
+        const files: DriveFileItem[] = (res.files ?? []).map((f: any) => ({
+          id: f.id,
+          ownerId: f.owner_id,
+          parentFolderId: f.parent_folder_id,
+          path: f.path,
+          name: f.file_name,
           itemType: 'file',
+          storageKey: f.storage_key,
+          sizeBytes: f.size_bytes,
+          mimeType: f.mime_type,
+          contentHash: f.content_hash,
+          isTrashed: f.is_trashed,
+          trashedAt: f.trashed_at,
+          createdAt: f.created_at,
+          updatedAt: f.updated_at,
         }));
         this.items.set([...folders, ...files]);
 
@@ -156,7 +176,7 @@ export class PublicShareComponent implements OnInit {
 
   onOpenItem(item: DriveFileItem | DriveFolderItem): void {
     if (item.itemType === 'folder') {
-      this.router.navigate(['/shared/folder', item.id]);
+      this.router.navigate(['/public-share/folder', item.id]);
     } else {
       this.dialog.open(FilePreview, {
         width: '80vw',
