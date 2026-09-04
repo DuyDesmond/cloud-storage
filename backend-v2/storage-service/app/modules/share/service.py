@@ -1,7 +1,7 @@
 import secrets
 import asyncpg
 from typing import Optional
-from fastapi import HTTPException, status, Depends
+from fastapi import Depends
 from app.modules.share.repository import ShareRepository
 from app.modules.share import schemas
 from app.core.security import hash_password
@@ -10,6 +10,7 @@ import uuid
 
 from app.core.cache import CacheRepository
 from app.core.auth_client import AuthServiceClient
+from app.core.exceptions import AccessDeniedError, ItemNotFoundError, InvalidOperationError, UserNotFoundError
 
 class ShareService:
     def __init__(
@@ -24,7 +25,7 @@ class ShareService:
     async def _verify_owner(self, target_id: uuid.UUID, is_file: bool, user_id: uuid.UUID) -> None:
         is_owner = await self.repo.check_is_owner(target_id, is_file, user_id)
         if not is_owner:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to perform this action.")
+            raise AccessDeniedError("You do not have permission to perform this action.")
 
     async def share_with_user(self, request: schemas.ShareWithUserRequest, owner_id: uuid.UUID) -> schemas.GenericMessageResponse:
         await self._verify_owner(request.target_id, request.is_file, owner_id)
@@ -32,11 +33,11 @@ class ShareService:
         # Look up user by email via local read-replica table
         grantee = await self.repo.get_user_by_email(request.email)
         if not grantee:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with this email not found.")
+            raise UserNotFoundError("User with this email not found.")
             
         grantee_id = grantee['id']
         if grantee_id == owner_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot share file with yourself.")
+            raise InvalidOperationError("Cannot share file with yourself.")
             
         pwd_hash = hash_password(request.password) if request.password else None
         await self.repo.upsert_user_share(request.target_id, request.is_file, grantee_id, request.permission, owner_id, pwd_hash)
@@ -47,7 +48,7 @@ class ShareService:
         
         grantee = await self.repo.get_user_by_email(request.email)
         if not grantee:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+            raise UserNotFoundError("User not found.")
             
         await self.repo.revoke_user_share(request.target_id, request.is_file, grantee['id'])
         return schemas.GenericMessageResponse(message="Share revoked successfully")
@@ -103,7 +104,7 @@ class ShareService:
         if not acl:
             acl_row = await self.repo.get_acl_by_token(share_token)
             if not acl_row:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found or revoked.")
+                raise ItemNotFoundError("Link not found or revoked.")
             acl = dict(acl_row)
             
             # Cache for 10 minutes to protect against viral traffic bursts

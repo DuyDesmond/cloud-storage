@@ -36,7 +36,7 @@ async def register(
     try:
         user, tokens = await auth_service.register_user(payload)
     except DuplicateRecordError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     set_auth_cookies(response, tokens)
     return user
 

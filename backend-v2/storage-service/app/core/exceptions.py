@@ -8,6 +8,10 @@ class ItemNotFoundError(DomainError):
     """Raised when a requested resource (file, folder) is not found."""
     pass
 
+class UserNotFoundError(DomainError):
+    """Raised when a requested user is not found."""
+    pass
+
 class QuotaExceededError(DomainError):
     """Raised when a user exceeds their storage quota."""
     pass
