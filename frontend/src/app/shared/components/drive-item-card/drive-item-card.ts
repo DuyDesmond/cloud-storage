@@ -3,11 +3,20 @@ import { DatePipe } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
-import { DriveItem } from './drive-item.model';
+import { DriveItem, DriveFileItem } from './drive-item.model';
+import { FileSizePipe } from '../../pipes/file-size.pipe';
+import { MimeIconPipe } from '../../pipes/mime-icon.pipe';
 
 @Component({
   selector: 'app-drive-item-card',
-  imports: [MatIconModule, MatButtonModule, MatMenuModule, DatePipe],
+  imports: [
+    MatIconModule,
+    MatButtonModule,
+    MatMenuModule,
+    DatePipe,
+    FileSizePipe,
+    MimeIconPipe,
+  ],
   templateUrl: './drive-item-card.html',
   styleUrl: './drive-item-card.scss',
 })
@@ -31,24 +40,9 @@ export class DriveItemCard {
 
   isDragTarget = signal(false);
 
-  // Dynamic formatting based on DB schema fields
-  displayMeta = computed(() => {
-    const item = this.item();
-    if (item.itemType === 'folder') {
-      return '';
-    }
-    return this.formatBytes(item.sizeBytes);
-  });
-
-  iconName = computed(() => {
-    const item = this.item();
-    if (item.itemType === 'folder') return 'folder';
-
-    const mime = item.mimeType ?? '';
-    if (mime.startsWith('image/')) return 'image';
-    if (mime.startsWith('video/')) return 'movie';
-    if (mime.includes('pdf')) return 'picture_as_pdf';
-    return 'description';
+  fileItem = computed(() => {
+    const i = this.item();
+    return i.itemType === 'file' ? (i as DriveFileItem) : null;
   });
 
   onCardClick(): void {
@@ -135,13 +129,5 @@ export class DriveItemCard {
         console.error('Failed to parse dropped item', e);
       }
     }
-  }
-
-  private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 }

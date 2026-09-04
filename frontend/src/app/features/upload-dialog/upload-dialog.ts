@@ -77,14 +77,20 @@ export class UploadDialog {
     if (input.files?.length) {
       const files = Array.from(input.files);
       const isFolderInput = input.hasAttribute('webkitdirectory');
-      
+
       if (isFolderInput) {
         const result = buildFolderTreeFromFiles(files);
         if (result.folders.length > 0) {
-          this.traversedFolders.update((existing) => [...existing, ...result.folders]);
+          this.traversedFolders.update((existing) => [
+            ...existing,
+            ...result.folders,
+          ]);
         }
         if (result.files.length > 0) {
-          this.selectedFiles.update((existing) => [...existing, ...result.files]);
+          this.selectedFiles.update((existing) => [
+            ...existing,
+            ...result.files,
+          ]);
         }
       } else {
         this.selectedFiles.update((existing) => [...existing, ...files]);

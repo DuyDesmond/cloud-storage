@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter, ActivatedRoute, Router } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { SharedLinkComponent } from './shared-link';
 import { AuthService } from '../../core/auth/services/auth.service';
 import { ShareService } from '../../core/share/services/share.service';
@@ -37,15 +37,12 @@ describe('SharedLinkComponent', () => {
         { provide: AuthService, useValue: mockAuthService },
         { provide: ShareService, useValue: mockShareService },
         { provide: Router, useValue: mockRouter },
-        {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { paramMap: { get: () => 'fake-token' } } },
-        },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(SharedLinkComponent);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('token', 'fake-token');
     fixture.detectChanges();
   });
 

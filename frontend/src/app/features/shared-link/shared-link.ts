@@ -1,6 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, input } from '@angular/core';
 
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ShareService } from '../../core/share/services/share.service';
 import { AuthService } from '../../core/auth/services/auth.service';
@@ -17,7 +17,8 @@ import { catchError, of, switchMap } from 'rxjs';
   styleUrl: './shared-link.scss',
 })
 export class SharedLinkComponent implements OnInit {
-  private route = inject(ActivatedRoute);
+  token = input<string>();
+
   private router = inject(Router);
   private shareService = inject(ShareService);
   private authService = inject(AuthService);
@@ -29,7 +30,7 @@ export class SharedLinkComponent implements OnInit {
   error = signal<string | null>(null);
 
   ngOnInit(): void {
-    const token = this.route.snapshot.paramMap.get('token');
+    const token = this.token();
 
     if (!token) {
       this.error.set('Invalid link.');

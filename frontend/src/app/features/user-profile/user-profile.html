@@ -46,14 +46,13 @@
             <div class="storage-details">
               <div class="storage-numbers">
                 <p class="huge-text">
-                  {{ storageState.usedStorageGB().toFixed(2) }}<span
+                  {{ (storageState.usedBytes() | fileSize).split(' ')[0] }}<span
                     class="unit"
-                    >GB</span
+                    >{{ (storageState.usedBytes() | fileSize).split(' ')[1] }}</span
                   >
                 </p>
                 <p class="sub-text">
-                  Used of {{ storageState.totalStorageGB().toFixed(2) }} GB
-                  total
+                  Used of {{ storageState.totalBytes() | fileSize }} total
                 </p>
               </div>
 

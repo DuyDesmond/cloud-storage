@@ -18,13 +18,10 @@ export class StorageStateService {
   totalBytes = signal<number>(DEFAULT_STORAGE_QUOTA_BYTES);
   isLoading = signal<boolean>(false);
 
-  usedStorageGB = computed(() => this.usedBytes() / 1024 ** 3);
-  totalStorageGB = computed(() => this.totalBytes() / 1024 ** 3);
-
   storagePercentage = computed(() => {
-    const total = this.totalStorageGB();
+    const total = this.totalBytes();
     if (!total) return 0;
-    return Math.min(100, Math.round((this.usedStorageGB() / total) * 100));
+    return Math.min(100, Math.round((this.usedBytes() / total) * 100));
   });
 
   constructor() {

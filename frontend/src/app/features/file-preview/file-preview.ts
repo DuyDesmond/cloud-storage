@@ -23,6 +23,7 @@ import {
   DriveFileItem,
 } from '../../shared/components/drive-item-card/drive-item.model';
 import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
+import { getFileType, FilePreviewType } from '../../shared/utils/mime.utils';
 
 @Component({
   selector: 'app-file-preview',
@@ -49,9 +50,7 @@ export class FilePreview implements OnInit, OnDestroy {
   hasError = signal(false);
   previewUrl = signal<SafeResourceUrl | null>(null);
   rawUrl: string | null = null;
-  fileType = signal<'image' | 'video' | 'pdf' | 'text' | 'unsupported'>(
-    'unsupported',
-  );
+  fileType = signal<FilePreviewType>('unsupported');
 
   constructor() {
     this.item = this.data.item as DriveFileItem;
@@ -91,22 +90,7 @@ export class FilePreview implements OnInit, OnDestroy {
   }
 
   private determineFileType(): void {
-    const mime = this.item.mimeType?.toLowerCase() || '';
-    if (mime.startsWith('image/')) {
-      this.fileType.set('image');
-    } else if (mime.startsWith('video/')) {
-      this.fileType.set('video');
-    } else if (mime === 'application/pdf') {
-      this.fileType.set('pdf');
-    } else if (
-      mime.startsWith('text/') ||
-      mime === 'application/json' ||
-      mime === 'application/javascript'
-    ) {
-      this.fileType.set('text');
-    } else {
-      this.fileType.set('unsupported');
-    }
+    this.fileType.set(getFileType(this.item.mimeType));
   }
 
   close(): void {

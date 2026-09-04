@@ -4,7 +4,7 @@ import {
   provideAppInitializer,
   inject,
 } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from './core/auth/services/auth.service';
 import {
@@ -20,7 +20,7 @@ import { routes } from './app.routes';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideRouter(routes),
+    provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(
       withInterceptors([authRefreshInterceptor, sharePasswordInterceptor]),
       withInterceptorsFromDi(),

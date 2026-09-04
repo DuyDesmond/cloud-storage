@@ -14,8 +14,8 @@ describe('SidePanel', () => {
   beforeEach(async () => {
     mockStorageState = {
       isLoading: signal(false),
-      usedStorageGB: signal(1.5),
-      totalStorageGB: signal(15),
+      usedBytes: signal(1.5),
+      totalBytes: signal(15),
       storagePercentage: signal(10),
     };
 

@@ -19,6 +19,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { NgOptimizedImage } from '@angular/common';
 
 export const passwordMatchValidator: ValidatorFn = (
   control: AbstractControl,
@@ -48,6 +49,7 @@ export const passwordMatchValidator: ValidatorFn = (
     MatIconModule,
     MatCheckboxModule,
     MatProgressSpinnerModule,
+    NgOptimizedImage,
   ],
   templateUrl: './register.html',
   styleUrl: './register.scss',

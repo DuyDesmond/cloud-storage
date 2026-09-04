@@ -52,9 +52,9 @@ describe('StorageStateService', () => {
     expect(mockFileService.getStorageUsage).toHaveBeenCalled();
   });
 
-  it('should compute used and total storage in GB', () => {
-    expect(service.usedStorageGB()).toBeCloseTo(0.0009765625);
-    expect(service.totalStorageGB()).toBe(20);
+  it('should compute used and total storage in bytes', () => {
+    expect(service.usedBytes()).toBe(1024 * 1024);
+    expect(service.totalBytes()).toBe(DEFAULT_STORAGE_QUOTA_BYTES);
   });
 
   it('should refresh storage when upload completes', () => {

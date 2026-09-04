@@ -12,6 +12,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { NgOptimizedImage } from '@angular/common';
 
 @Component({
   selector: 'app-login',
@@ -25,6 +26,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
     MatIconModule,
     MatCheckboxModule,
     MatProgressSpinnerModule,
+    NgOptimizedImage,
   ],
   templateUrl: './login.html',
   styleUrl: './login.scss',

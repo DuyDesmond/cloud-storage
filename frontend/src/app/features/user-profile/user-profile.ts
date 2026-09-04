@@ -12,8 +12,12 @@ import {
 import { AuthService } from '@core/auth/services/auth.service';
 import { Router } from '@angular/router';
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
+import { FileSizePipe } from '../../shared/pipes/file-size.pipe';
 import { StorageStateService } from '../../core/file-operations/services/storage-state.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatDialog } from '@angular/material/dialog';
+import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
+import { ChangePasswordDialogComponent } from '../../shared/components/change-password-dialog/change-password-dialog';
 
 export interface StorageCategory {
   name: string;
@@ -46,6 +50,7 @@ export type ActionKey =
     DashboardHeader,
     SidePanel,
     MobileBottomNav,
+    FileSizePipe,
   ],
   templateUrl: './user-profile.html',
   styleUrl: './user-profile.scss',
@@ -55,6 +60,7 @@ export class UserProfile implements OnInit {
   private router = inject(Router);
   private fileService = inject(FileOperationsService);
   private snackBar = inject(MatSnackBar);
+  private dialog = inject(MatDialog);
   readonly storageState = inject(StorageStateService);
 
   currentUser = this.authService.currentUser;
@@ -175,37 +181,47 @@ export class UserProfile implements OnInit {
   }
 
   private handleChangePassword(): void {
-    const currentPass = window.prompt('Enter your current password:');
-    if (!currentPass) return;
+    const dialogRef = this.dialog.open(ChangePasswordDialogComponent, {
+      width: '400px'
+    });
 
-    const newPass = window.prompt('Enter your new passwo3 rd (min 8 chars):');
-    if (!newPass) return;
-
-    this.authService.changePassword(currentPass, newPass).subscribe({
-      next: (res) => {
-        alert(res.message);
-      },
-      error: (err) => {
-        alert(err.error?.detail ?? 'Failed to change password');
-      },
+    dialogRef.afterClosed().subscribe((result) => {
+      if (result) {
+        this.authService.changePassword(result.currentPassword, result.newPassword).subscribe({
+          next: (res) => {
+            this.snackBar.open(res.message, 'Close', { duration: 3000 });
+          },
+          error: (err) => {
+            this.snackBar.open(err.error?.detail ?? 'Failed to change password', 'Close', { duration: 3000 });
+          },
+        });
+      }
     });
   }
 
   private handleDeleteAccount(): void {
-    const confirmed = window.confirm(
-      'Are you sure you want to permanently delete your account? This action cannot be undone.',
-    );
+    const dialogRef = this.dialog.open(ConfirmDialog, {
+      width: '400px',
+      data: {
+        title: 'Delete Account',
+        message: 'Are you sure you want to permanently delete your account? This action cannot be undone.',
+        confirmText: 'Delete Account',
+        isDestructive: true,
+      }
+    });
 
-    if (confirmed) {
-      this.authService.deleteAccount().subscribe({
-        next: (res) => {
-          alert(res.message);
-          this.router.navigate(['/login']);
-        },
-        error: (err) => {
-          alert(err.error?.detail ?? 'Failed to delete account');
-        },
-      });
-    }
+    dialogRef.afterClosed().subscribe((confirmed) => {
+      if (confirmed) {
+        this.authService.deleteAccount().subscribe({
+          next: (res) => {
+            this.snackBar.open(res.message, 'Close', { duration: 3000 });
+            this.router.navigate(['/login']);
+          },
+          error: (err) => {
+            this.snackBar.open(err.error?.detail ?? 'Failed to delete account', 'Close', { duration: 3000 });
+          },
+        });
+      }
+    });
   }
 }

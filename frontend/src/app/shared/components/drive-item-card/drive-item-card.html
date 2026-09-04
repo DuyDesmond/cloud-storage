@@ -56,11 +56,12 @@
   </div>
 
   <div class="card-preview">
-    @if (item().itemType === 'file' && $any(item()).previewUrl) {
-    <img [src]="$any(item()).previewUrl" [alt]="item().name" />
+    @if (fileItem()?.previewUrl) {
+    <img [src]="fileItem()!.previewUrl" [alt]="item().name" />
     } @else {
     <mat-icon class="large-icon" [class]="item().itemType">
-      {{ iconName() }}
+      {{ item().itemType === 'folder' ? 'folder' : (fileItem()?.mimeType |
+      mimeIcon) }}
     </mat-icon>
     }
   </div>
@@ -68,8 +69,8 @@
   <div class="card-footer">
     <div class="meta-info">
       <span>{{ item().updatedAt | date:'MMM d, y, h:mm a' }}</span>
-      @if (displayMeta()) {
-      <span>{{ displayMeta() }}</span>
+      @if (fileItem()) {
+      <span>{{ fileItem()!.sizeBytes | fileSize }}</span>
       }
     </div>
     <mat-icon

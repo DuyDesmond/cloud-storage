@@ -28,8 +28,8 @@ describe('SharedWithMe', () => {
 
     mockStorageState = {
       refreshStorageUsage: vi.fn(),
-      usedStorageGB: signal(1),
-      totalStorageGB: signal(10),
+      usedBytes: signal(1),
+      totalBytes: signal(10),
       storagePercentage: signal(10),
       isLoading: signal(false),
     };

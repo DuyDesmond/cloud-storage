@@ -23,9 +23,8 @@ describe('Trash', () => {
 
     mockStorageState = {
       refreshStorageUsage: vi.fn(),
-      usedBytes: vi.fn().mockReturnValue(0),
-      usedStorageGB: signal(1),
-      totalStorageGB: signal(10),
+      usedBytes: signal(1),
+      totalBytes: signal(10),
       storagePercentage: signal(10),
       isLoading: signal(false),
     };
