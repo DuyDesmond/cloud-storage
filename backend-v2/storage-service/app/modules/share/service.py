@@ -9,18 +9,15 @@ from app.core.config import settings
 import uuid
 
 from app.core.cache import CacheRepository
-from app.core.auth_client import AuthServiceClient
 from app.core.exceptions import AccessDeniedError, ItemNotFoundError, InvalidOperationError, UserNotFoundError
 
 class ShareService:
     def __init__(
         self, 
         repo: ShareRepository = Depends(),
-        auth_client: AuthServiceClient = Depends(),
         cache: CacheRepository = Depends()
     ):
         self.repo = repo
-        self.auth_client = auth_client
         self.cache = cache
     async def _verify_owner(self, target_id: uuid.UUID, is_file: bool, user_id: uuid.UUID) -> None:
         is_owner = await self.repo.check_is_owner(target_id, is_file, user_id)

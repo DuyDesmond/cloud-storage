@@ -2,11 +2,9 @@ import uuid
 from fastapi import HTTPException, Request, status, Depends
 from app.core.security import decode_token
 from app.core.cache import CacheRepository
-from app.core.auth_client import AuthServiceClient
 
 async def get_current_user(
     request: Request,
-    auth_client: AuthServiceClient = Depends(AuthServiceClient),
     cache: CacheRepository = Depends(CacheRepository),
 ) -> dict:
     """FastAPI Dependency: Stateless JWT verification."""
@@ -53,7 +51,6 @@ async def get_current_user(
 
 async def get_optional_current_user(
     request: Request,
-    auth_client: AuthServiceClient = Depends(AuthServiceClient),
     cache: CacheRepository = Depends(CacheRepository),
 ) -> dict | None:
     """FastAPI Dependency: Returns current user if token exists and is valid, else None."""
