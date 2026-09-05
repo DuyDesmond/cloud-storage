@@ -1,0 +1,36 @@
+name: Backend CI (Build & Test)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, dev, dev-duy, aws-deploy]
+    paths:
+      - "backend-v2/**"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches: [main, dev, dev-duy, aws-deploy]
+    paths:
+      - "backend-v2/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Test Build Auth Service
+        run: |
+          cd backend-v2/auth-service
+          docker build -t auth-service-test .
+
+      - name: Test Build Storage Service
+        run: |
+          cd backend-v2/storage-service
+          docker build -t storage-service-test .
+
+      - name: Test Build API Gateway
+        run: |
+          cd backend-v2/api-gateway
+          docker build -t api-gateway-test .

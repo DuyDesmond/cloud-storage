@@ -1,0 +1,11 @@
+apiVersion: v2
+kind: ConfigMap
+metadata:
+  name: nephos-config
+  namespace: nephos
+data:
+  ENVIRONMENT: "dev"
+  AUTH_SERVICE_URL: "http://auth-service.nephos.svc.cluster.local:8000/api/v2"
+  API_STR: "/api/v2"
+  RABBITMQ_URL: "amqp://guest:guest@rabbitmq.nephos.svc.cluster.local:5672/"
+  CORS_ORIGINS: "http://localhost:4200, https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net"

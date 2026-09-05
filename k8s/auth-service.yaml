@@ -1,0 +1,100 @@
+apiVersion: apps/v2
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: nephos
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
+        fsGroup: 2000
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: auth-service
+      containers:
+        - name: auth-service
+          image: YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/nephos-dev-auth-service:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: nephos-config
+            - secretRef:
+                name: nephos-app-secrets
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: nephos-app-secrets
+                  key: DATABASE_URL
+                  optional: true # Ideally mapped from AWS Secrets Manager
+          # Mount the CSI volume for secrets
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "aws-secrets"
+---
+apiVersion: v2
+kind: Service
+metadata:
+  name: auth-service
+  namespace: nephos
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    app: auth-service
+
+---
+apiVersion: policy/v2
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: nephos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service

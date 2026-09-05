@@ -1,0 +1,64 @@
+<div class="dashboard-wrapper">
+  <app-dashboard-header></app-dashboard-header>
+
+  <div class="workspace-container">
+    <app-side-panel
+      [activeNav]="currentNav()"
+      (upload)="onUploadTrigger()"
+    ></app-side-panel>
+
+    <main class="main-canvas">
+      <section class="content-section">
+        <header class="section-header trash-header">
+          <div>
+            <h2>Trash</h2>
+            <p>Items in the trash will be permanently removed after 20 days.</p>
+          </div>
+
+          @if (hasItems()) {
+          <button
+            mat-flat-button
+            color="warn"
+            class="empty-trash-btn"
+            [disabled]="isLoading()"
+            (click)="onEmptyTrash()"
+          >
+            <mat-icon>delete_forever</mat-icon>
+            Empty Trash
+          </button>
+          }
+        </header>
+
+        @if (isLoading()) {
+        <div class="loading-bar">
+          <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+        </div>
+        } @else if (!hasItems()) {
+        <div class="empty-state">
+          <mat-icon class="empty-icon">delete_outline</mat-icon>
+          <h3>Trash is empty</h3>
+          <p>Items moved to the trash will appear here.</p>
+        </div>
+        } @else {
+        <div class="cards-grid">
+          @for (item of items(); track item.id) {
+          <app-drive-item-card
+            [item]="item"
+            [isTrashView]="true"
+            (restore)="onRestoreItem($event)"
+            (permanentDelete)="onPermanentDeleteItem($event)"
+          ></app-drive-item-card>
+          }
+        </div>
+        }
+      </section>
+    </main>
+  </div>
+
+  <app-mobile-bottom-nav
+    [activeNav]="currentNav()"
+    (upload)="onUploadTrigger()"
+  ></app-mobile-bottom-nav>
+
+  <app-upload-widget></app-upload-widget>
+</div>

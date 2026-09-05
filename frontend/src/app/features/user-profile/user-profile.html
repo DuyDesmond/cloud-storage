@@ -5,12 +5,7 @@
   <!-- 2. WORKSPACE CONTAINER -->
   <div class="workspace-container">
     <!-- Side Panel handles storage & main file views -->
-    <app-side-panel
-      [usedStorage]="usedStorage()"
-      [totalStorage]="totalStorage()"
-      [activeNav]="activeSideNav()"
-      (navChange)="switchNav($event)"
-    ></app-side-panel>
+    <app-side-panel [activeNav]="activeSideNav()"></app-side-panel>
 
     <!-- MAIN CANVAS -->
     <main class="main-canvas">
@@ -51,19 +46,24 @@
             <div class="storage-details">
               <div class="storage-numbers">
                 <p class="huge-text">
-                  {{ usedStorage() }}<span class="unit">GB</span>
+                  {{ (storageState.usedBytes() | fileSize).split(' ')[0] }}<span
+                    class="unit"
+                    >{{ (storageState.usedBytes() | fileSize).split(' ')[1] }}</span
+                  >
                 </p>
-                <p class="sub-text">Used of {{ totalStorage() }}GB total</p>
+                <p class="sub-text">
+                  Used of {{ storageState.totalBytes() | fileSize }} total
+                </p>
               </div>
 
               <div class="progress-container">
                 <mat-progress-bar
                   mode="determinate"
-                  [value]="(usedStorage() / totalStorage()) * 100"
+                  [value]="storageState.storagePercentage()"
                 ></mat-progress-bar>
               </div>
 
-              <div class="category-grid">
+              <!-- <div class="category-grid">
                 @for (cat of storageCategories(); track cat.name) {
                 <div class="category-tile">
                   <mat-icon [class]="cat.colorClass">{{ cat.icon }}</mat-icon>
@@ -71,7 +71,7 @@
                   <strong class="cat-size">{{ cat.size }}</strong>
                 </div>
                 }
-              </div>
+              </div> -->
             </div>
           </div>
         </div>
