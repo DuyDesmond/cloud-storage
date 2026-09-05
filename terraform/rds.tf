@@ -30,8 +30,8 @@ resource "aws_security_group" "rds" {
 resource "aws_db_instance" "postgres" {
   identifier           = "${var.project_name}-${var.environment}-db"
   engine               = "postgres"
-  engine_version       = "15.3"
-  instance_class       = "db.t3.micro"
+  engine_version       = "16"
+  instance_class       = "db.t4g.micro"
   allocated_storage    = 20
   db_name              = var.project_name
   username             = var.db_username

@@ -1,0 +1,57 @@
+apiVersion: networking.k8s.io/v2
+kind: Ingress
+metadata:
+  name: api-ingress
+  namespace: nephos
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/*/auth*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8000
+          - path: /api/*/files*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: storage-service
+                port:
+                  number: 8000
+          - path: /api/*/folders*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: storage-service
+                port:
+                  number: 8000
+          - path: /api/*/share*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: storage-service
+                port:
+                  number: 8000
+          - path: /api/*/trash*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: storage-service
+                port:
+                  number: 8000
+          - path: /api/*/storage*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: storage-service
+                port:
+                  number: 8000

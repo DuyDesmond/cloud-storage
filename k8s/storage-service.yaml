@@ -1,4 +1,4 @@
-apiVersion: apps/v1
+apiVersion: apps/v2
 kind: Deployment
 metadata:
   name: storage-service
@@ -12,44 +12,88 @@ spec:
     metadata:
       labels:
         app: storage-service
-    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
+        fsGroup: 2000
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: storage-service
       containers:
-      - name: storage-service
-        image: YOUR_AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/nephos-dev-storage-service:latest
-        ports:
-        - containerPort: 8000
-        envFrom:
-        - configMapRef:
-            name: nephos-config
-        - secretRef:
-            name: nephos-app-secrets
-        env:
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: nephos-app-secrets
-              key: DATABASE_URL
-              optional: true
-        volumeMounts:
-        - name: secrets-store-inline
-          mountPath: "/mnt/secrets-store"
-          readOnly: true
+        - name: storage-service
+          image: YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/nephos-dev-storage-service:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: nephos-config
+            - secretRef:
+                name: nephos-app-secrets
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: nephos-app-secrets
+                  key: DATABASE_URL
+                  optional: true
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
       volumes:
-      - name: secrets-store-inline
-        csi:
-          driver: secrets-store.csi.k8s.io
-          readOnly: true
-          volumeAttributes:
-            secretProviderClass: "aws-secrets"
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "aws-secrets"
 ---
-apiVersion: v1
+apiVersion: v2
 kind: Service
 metadata:
   name: storage-service
   namespace: nephos
 spec:
   ports:
-  - port: 8000
-    targetPort: 8000
+    - port: 8000
+      targetPort: 8000
   selector:
     app: storage-service
+
+---
+apiVersion: policy/v2
+kind: PodDisruptionBudget
+metadata:
+  name: storage-service-pdb
+  namespace: nephos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: storage-service

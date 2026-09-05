@@ -41,9 +41,14 @@ app.include_router(auth_router, prefix=settings.API_STR)
 
 app.include_router(internal_router)
 
+import os
+
+cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:4200")
+cors_origins = [origin.strip() for origin in cors_origins_str.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4200"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

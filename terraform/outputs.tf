@@ -37,8 +37,3 @@ output "ecr_repository_storage" {
   description = "ECR Repository URL for Storage Service"
   value       = aws_ecr_repository.storage.repository_url
 }
-
-output "ecr_repository_api_gateway" {
-  description = "ECR Repository URL for API Gateway"
-  value       = aws_ecr_repository.api_gateway.repository_url
-}

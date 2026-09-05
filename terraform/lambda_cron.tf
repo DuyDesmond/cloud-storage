@@ -44,7 +44,7 @@ resource "aws_lambda_function" "trash_purge" {
   role             = aws_iam_role.lambda_exec.arn
   handler          = "aws_lambda_handler.handler"
   source_code_hash = data.archive_file.dummy_lambda.output_base64sha256
-  runtime          = "python3.10"
+  runtime          = "python3.12"
   timeout          = 300
   
   vpc_config {

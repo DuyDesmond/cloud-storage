@@ -1,0 +1,77 @@
+name: Backend CD (Deploy to AWS)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, dev, dev-duy, aws-deploy]
+    paths:
+      - "backend-v2/**"
+      - "k8s/**"
+      - ".github/workflows/backend-cd.yml"
+
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-1
+  EKS_CLUSTER_NAME: nephos-dev-cluster
+  AUTH_SERVICE_ECR: nephos-dev-auth-service
+  STORAGE_SERVICE_ECR: nephos-dev-storage-service
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push Docker image for Auth Service
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          cd backend-v2/auth-service
+          docker build -t $ECR_REGISTRY/${{ env.AUTH_SERVICE_ECR }}:latest .
+          docker push $ECR_REGISTRY/${{ env.AUTH_SERVICE_ECR }}:latest
+
+      - name: Build, tag, and push Docker image for Storage Service
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          cd backend-v2/storage-service
+          docker build -t $ECR_REGISTRY/${{ env.STORAGE_SERVICE_ECR }}:latest .
+          docker push $ECR_REGISTRY/${{ env.STORAGE_SERVICE_ECR }}:latest
+
+
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/aws-secrets-provider.yaml
+          kubectl apply -f k8s/rabbitmq.yaml
+          kubectl apply -f k8s/ingress.yaml
+
+          # Replace placeholder ECR URLs with actual registry URL before applying
+          sed -i "s/YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/${{ steps.login-ecr.outputs.registry }}/g" k8s/auth-service.yaml
+          sed -i "s/YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/${{ steps.login-ecr.outputs.registry }}/g" k8s/storage-service.yaml
+
+          kubectl apply -f k8s/auth-service.yaml
+          kubectl apply -f k8s/storage-service.yaml
+
+          # Force rollout to pull latest images
+          kubectl rollout restart deployment auth-service -n nephos
+          kubectl rollout restart deployment storage-service -n nephos
