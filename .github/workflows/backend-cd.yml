@@ -32,6 +32,28 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Inspect OIDC Token and STS Error
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          # 1. Grab raw token from GitHub's internal runner endpoint
+          RAW_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+
+          # 2. Print decoded payload
+          echo "=== Decoded Claims ==="
+          echo "$RAW_TOKEN" | cut -d. -f2 | base64 --decode | jq '{sub: .sub, aud: .aud, repository: .repository, ref: .ref}'
+
+          # 3. Print target role ARN length and trimmed value check
+          echo "Target Role ARN: $ROLE_ARN"
+
+          # 4. Invoke AssumeRoleWithWebIdentity directly to display the exact STS error
+          aws sts assume-role-with-web-identity \
+            --role-arn "$ROLE_ARN" \
+            --role-session-name "DebugSession" \
+            --web-identity-token "$RAW_TOKEN" \
+            --region ${{ env.AWS_REGION }}
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
