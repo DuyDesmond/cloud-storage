@@ -2,7 +2,8 @@
 # We can create an additional secret for application-specific config if needed.
 
 resource "aws_secretsmanager_secret" "app_secrets" {
-  name = "${var.project_name}-${var.environment}-app-secrets"
+  name                    = "${var.project_name}-${var.environment}-app-secrets-v2"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "app_secrets_initial" {

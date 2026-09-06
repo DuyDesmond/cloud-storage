@@ -2,7 +2,7 @@ import asyncio
 import logging
 from app.core.database import get_pool
 from app.modules.files.repositories import FileQueryRepository, TrashRepository
-from app.core.object_bucket import R2StorageGateway
+from app.core.object_bucket import get_storage_gateway
 from app.core.config import settings
 from app.core.repository import CoreRepository
 
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def process_deletion_jobs():
     logger.info("Started deletion job background worker")
-    storage = R2StorageGateway()
+    storage = get_storage_gateway()
     
     while True:
         try:

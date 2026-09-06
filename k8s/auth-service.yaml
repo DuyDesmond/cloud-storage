@@ -1,4 +1,4 @@
-apiVersion: apps/v2
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: auth-service
@@ -12,6 +12,8 @@ spec:
     metadata:
       labels:
         app: auth-service
+    spec:
+      serviceAccountName: nephos-sa
       securityContext:
         runAsUser: 1000
         runAsGroup: 3000
@@ -75,7 +77,7 @@ spec:
             volumeAttributes:
               secretProviderClass: "aws-secrets"
 ---
-apiVersion: v2
+apiVersion: v1
 kind: Service
 metadata:
   name: auth-service
@@ -88,7 +90,7 @@ spec:
     app: auth-service
 
 ---
-apiVersion: policy/v2
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: auth-service-pdb

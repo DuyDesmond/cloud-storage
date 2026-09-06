@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.core import database
 from app.modules.files.repositories.trash_repository import TrashRepository
 from app.modules.files.repositories.file_query_repository import FileQueryRepository
-from app.core.object_bucket import R2StorageGateway, StorageGateway
+from app.core.object_bucket import get_storage_gateway, StorageGateway
 
 logger = logging.getLogger("purge_trashed")
 RETENTION_DAYS = int(os.getenv("TRASH_RETENTION_DAYS", "20"))
@@ -41,7 +41,7 @@ async def run_purge_job(retention_days: int = RETENTION_DAYS):
         logger.error("Database pool is not initialized.")
         return
 
-    storage = R2StorageGateway()
+    storage = get_storage_gateway()
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
     logger.info(f"Starting purge job for items trashed before {cutoff.isoformat()} ({retention_days} days retention)")

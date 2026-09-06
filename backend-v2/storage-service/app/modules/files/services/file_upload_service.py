@@ -13,7 +13,7 @@ from app.core.exceptions import ItemNotFoundError, InvalidOperationError, Duplic
 from app.modules.files import schemas
 from app.modules.files.utils.sanitization import sanitize_filename
 from app.modules.files.utils.db_retry import with_db_retry
-from app.core.object_bucket import StorageGateway, R2StorageGateway
+from app.core.object_bucket import StorageGateway, get_storage_gateway
 from app.core.hash_reader import HashReader
 from app.modules.files.repositories import FileQueryRepository, StorageQuotaRepository, TrashRepository, FileManagementRepository
 from .base import BaseFileService
@@ -25,7 +25,7 @@ class FileUploadService(BaseFileService):
         quota_repo: StorageQuotaRepository = Depends(StorageQuotaRepository),
         trash_repo: TrashRepository = Depends(TrashRepository),
         management_repo: FileManagementRepository = Depends(FileManagementRepository),
-        storage: StorageGateway = Depends(R2StorageGateway),
+        storage: StorageGateway = Depends(get_storage_gateway),
     ):
         super().__init__(query_repo, quota_repo, trash_repo, management_repo, storage)
 

@@ -180,3 +180,64 @@ class R2StorageGateway(StorageGateway):
                 await client.abort_multipart_upload(Bucket=self.bucket_name, Key=object_name, UploadId=upload_id)
         except ClientError:
             pass
+
+class S3StorageGateway(R2StorageGateway):
+    def __init__(self) -> None:
+        self.endpoint_url = getattr(settings, "BUCKET_ENDPOINT_URL", None)
+        self.bucket_name = getattr(settings, "BUCKET_NAME", None)
+        self.region_name = getattr(settings, "BUCKET_REGION_NAME", "ap-southeast-1")
+        self.session = aioboto3.Session()
+
+    @asynccontextmanager
+    async def _get_client(self):
+        if not self.bucket_name:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AWS S3 storage is not configured.",
+            )
+        kwargs = {
+            "service_name": "s3",
+            "region_name": self.region_name,
+        }
+        if self.endpoint_url:
+            kwargs["endpoint_url"] = self.endpoint_url
+            
+        async with self.session.client(**kwargs) as client:
+            yield client
+
+    async def delete_object(self, object_name: str) -> None:
+        if not self.bucket_name: return
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                async with self._get_client() as client:
+                    await client.delete_object(Bucket=self.bucket_name, Key=object_name)
+                return
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Failed to delete object {object_name}: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to delete file from storage.")
+                await asyncio.sleep(1)
+
+    async def batch_delete_objects(self, object_names: list[str]) -> None:
+        if not self.bucket_name or not object_names: return
+        chunk_size = 1000
+        max_retries = 5
+        for i in range(0, len(object_names), chunk_size):
+            chunk = object_names[i:i + chunk_size]
+            delete_payload = {'Objects': [{'Key': key} for key in chunk], 'Quiet': True}
+            for attempt in range(max_retries):
+                try:
+                    async with self._get_client() as client:
+                        await client.delete_objects(Bucket=self.bucket_name, Delete=delete_payload)
+                    break 
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        logger.error(f"Failed to batch delete objects: {e}")
+                        raise HTTPException(status_code=500, detail="Failed to batch delete files from storage.")
+                    await asyncio.sleep(1)
+
+def get_storage_gateway() -> StorageGateway:
+    if settings.ENVIRONMENT == "dev":
+        return S3StorageGateway()
+    return R2StorageGateway()

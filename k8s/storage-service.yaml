@@ -1,4 +1,4 @@
-apiVersion: apps/v2
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: storage-service
@@ -12,6 +12,8 @@ spec:
     metadata:
       labels:
         app: storage-service
+    spec:
+      serviceAccountName: nephos-sa
       securityContext:
         runAsUser: 1000
         runAsGroup: 3000
@@ -74,7 +76,7 @@ spec:
             volumeAttributes:
               secretProviderClass: "aws-secrets"
 ---
-apiVersion: v2
+apiVersion: v1
 kind: Service
 metadata:
   name: storage-service
@@ -87,7 +89,7 @@ spec:
     app: storage-service
 
 ---
-apiVersion: policy/v2
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: storage-service-pdb

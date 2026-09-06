@@ -43,6 +43,7 @@ postman
 **/.terraform/*
 .terraform.*
 dummy_lambda.zip
+tfplan
 
 # .tfstate files (contain sensitive infrastructure metadata and secrets)
 *.tfstate

@@ -18,11 +18,6 @@ output "rds_endpoint" {
   value       = aws_db_instance.postgres.endpoint
 }
 
-output "redis_endpoint" {
-  description = "ElastiCache Redis endpoint"
-  value       = aws_elasticache_cluster.redis.cache_nodes[0].address
-}
-
 output "frontend_cloudfront_url" {
   description = "URL of the CloudFront distribution for the frontend"
   value       = aws_cloudfront_distribution.frontend.domain_name
