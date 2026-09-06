@@ -33,9 +33,10 @@ jobs:
         env:
           ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
         run: |
-          # 1. Grab raw token from GitHub's internal runner endpoint
+          # 1. Grab raw token from GitHub's internal runner endpoint and print it
           RAW_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+          echo "Raw Token: $RAW_TOKEN"
 
           # 2. Print decoded payload
           echo "=== Decoded Claims ==="
