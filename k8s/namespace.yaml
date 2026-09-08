@@ -8,3 +8,15 @@ kind: ServiceAccount
 metadata:
   name: nephos-sa
   namespace: nephos
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: auth-service-sa
+  namespace: nephos
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: storage-service-sa
+  namespace: nephos

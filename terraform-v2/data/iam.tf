@@ -263,6 +263,13 @@ data "aws_iam_policy_document" "github_actions_cd" {
     ]
   }
 
+  # EKS Cluster Access for update-kubeconfig
+  statement {
+    sid       = "EKSClusterAccess"
+    actions   = ["eks:DescribeCluster"]
+    resources = ["*"]
+  }
+
   # CloudFront Invalidation and Distribution Updates
   statement {
     sid = "CloudFrontDeploy"
