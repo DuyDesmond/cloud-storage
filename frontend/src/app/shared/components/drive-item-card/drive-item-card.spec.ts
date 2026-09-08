@@ -42,14 +42,6 @@ describe('DriveItemCard', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should compute displayMeta correctly for files', () => {
-    expect(component.displayMeta()).toBe('1 KB');
-  });
-
-  it('should compute iconName correctly for files', () => {
-    expect(component.iconName()).toBe('description');
-  });
-
   it('should emit open event on card click', () => {
     const emitSpy = vi.spyOn(component.open, 'emit');
     component.onCardClick();

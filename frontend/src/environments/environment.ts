@@ -1,5 +1,6 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://api.yourdomain.com',
+  // Keep API requests on the same CloudFront hostname for the temporary setup.
+  apiUrl: '',
   apiStr: '/api/v2',
 };

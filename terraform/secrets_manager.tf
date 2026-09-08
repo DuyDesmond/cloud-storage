@@ -2,12 +2,12 @@
 # We can create an additional secret for application-specific config if needed.
 
 resource "aws_secretsmanager_secret" "app_secrets" {
-  name                    = "${var.project_name}-${var.environment}-app-secrets-v2"
+  name                    = "${var.project_name}-${var.environment}-app-secrets"
   recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "app_secrets_initial" {
-  secret_id     = aws_secretsmanager_secret.app_secrets.id
+  secret_id = aws_secretsmanager_secret.app_secrets.id
   secret_string = jsonencode({
     JWT_SECRET_KEY = "dummy-secret-to-be-replaced-in-aws-console"
   })
