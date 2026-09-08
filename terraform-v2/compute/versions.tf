@@ -1,6 +1,14 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  backend "s3" {
+    bucket       = "nephos-tfstate-662904411478"
+    key          = "compute/terraform.tfstate"
+    region       = "ap-southeast-1"
+    use_lockfile = true
+    encrypt      = true
+  }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -31,9 +39,11 @@ data "aws_availability_zones" "available" {
 }
 
 data "terraform_remote_state" "data" {
-  backend = "local"
+  backend = "s3"
 
   config = {
-    path = var.data_state_path
+    bucket = "nephos-tfstate-662904411478"
+    key    = "data/terraform.tfstate"
+    region = "ap-southeast-1"
   }
 }

@@ -6,6 +6,8 @@ module "eks" {
   cluster_version = var.eks_cluster_version
 
   cluster_endpoint_public_access           = true
+  cluster_endpoint_private_access          = true
+  cluster_enabled_log_types                = ["api", "audit", "authenticator"]
   enable_cluster_creator_admin_permissions = true
 
   access_entries = {
@@ -61,6 +63,9 @@ module "eks" {
 
   eks_managed_node_group_defaults = {
     ami_type = "AL2023_x86_64_STANDARD"
+    iam_role_additional_policies = {
+      AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    }
   }
 
   eks_managed_node_groups = {

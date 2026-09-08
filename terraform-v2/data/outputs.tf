@@ -34,6 +34,22 @@ output "pod_role_arn" {
   value = aws_iam_role.pod.arn
 }
 
+output "auth_pod_role_arn" {
+  value = aws_iam_role.auth_pod.arn
+}
+
+output "storage_pod_role_arn" {
+  value = aws_iam_role.storage_pod.arn
+}
+
+output "lambda_role_arn" {
+  value = aws_iam_role.lambda.arn
+}
+
+output "rds_secret_arn" {
+  value = aws_db_instance.postgres.master_user_secret[0].secret_arn
+}
+
 output "storage_bucket_name" {
   value = aws_s3_bucket.storage.bucket
 }

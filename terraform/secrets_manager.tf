@@ -9,7 +9,7 @@ resource "aws_secretsmanager_secret" "app_secrets" {
 resource "aws_secretsmanager_secret_version" "app_secrets_initial" {
   secret_id = aws_secretsmanager_secret.app_secrets.id
   secret_string = jsonencode({
-    JWT_SECRET_KEY = "dummy-secret-to-be-replaced-in-aws-console"
+    JWT_SECRET_KEY = "dummy-secret-to-be-replaced-in-aws-console-051004"
   })
 }
 

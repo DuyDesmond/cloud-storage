@@ -11,7 +11,7 @@ output "cluster_endpoint" {
 }
 
 output "data_vpc_id" {
-  value = data.terraform_remote_state.data.outputs.vpc_id
+  value = try(data.terraform_remote_state.data.outputs.vpc_id, null)
 }
 
 output "deployment_order" {

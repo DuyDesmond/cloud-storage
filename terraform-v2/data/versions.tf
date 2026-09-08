@@ -1,6 +1,14 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  backend "s3" {
+    bucket       = "nephos-tfstate-662904411478"
+    key          = "data/terraform.tfstate"
+    region       = "ap-southeast-1"
+    use_lockfile = true
+    encrypt      = true
+  }
+
   required_providers {
     archive = {
       source  = "hashicorp/archive"
@@ -28,4 +36,10 @@ provider "aws" {
 
 data "aws_availability_zones" "available" {
   state = "available"
+}
+
+data "aws_caller_identity" "current" {}
+
+data "aws_iam_role" "github_actions" {
+  name = var.github_actions_role_name
 }

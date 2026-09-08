@@ -27,7 +27,7 @@ module "eks_blueprints_addons" {
       ]
     })]
   }
-  
+
   secrets_store_csi_driver_provider_aws = {
     chart_version = "3.1.3"
     values = [yamlencode({

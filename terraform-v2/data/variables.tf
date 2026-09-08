@@ -34,3 +34,9 @@ variable "api_origin_domain_name" {
   nullable    = true
   description = "ALB DNS name for the optional CloudFront /api/* origin. Set this after the Kubernetes Ingress creates the ALB."
 }
+
+variable "github_actions_role_name" {
+  description = "Existing IAM role assumed by the GitHub Actions CD workflows."
+  type        = string
+  default     = "nephos-terraform"
+}
