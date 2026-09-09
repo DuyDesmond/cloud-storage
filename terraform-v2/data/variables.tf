@@ -30,9 +30,8 @@ variable "db_username" {
 
 variable "api_origin_domain_name" {
   type        = string
-  default     = null
-  nullable    = true
-  description = "ALB DNS name for the optional CloudFront /api/* origin. Set this after the Kubernetes Ingress creates the ALB."
+  default     = "pending-alb-deployment.example.com"
+  description = "ALB DNS name for the CloudFront /api/* origin. The CI/CD pipeline will automatically overwrite this with the real ALB hostname."
 }
 
 variable "github_actions_role_names" {
