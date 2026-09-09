@@ -286,7 +286,8 @@ data "aws_iam_policy_document" "github_actions_cd" {
 }
 
 resource "aws_iam_role_policy" "github_actions_cd" {
-  name   = "${var.project_name}-${var.environment}-github-actions-cd"
-  role   = data.aws_iam_role.github_actions.name
-  policy = data.aws_iam_policy_document.github_actions_cd.json
+  for_each = data.aws_iam_role.github_actions
+  name     = "${var.project_name}-${var.environment}-github-actions-cd-${each.key}"
+  role     = each.value.name
+  policy   = data.aws_iam_policy_document.github_actions_cd.json
 }

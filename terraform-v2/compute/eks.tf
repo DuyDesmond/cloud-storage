@@ -10,31 +10,34 @@ module "eks" {
   cluster_enabled_log_types                = ["api", "audit", "authenticator"]
   enable_cluster_creator_admin_permissions = true
 
-  access_entries = {
-    root_admin = {
-      principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-      policy_associations = {
-        admin = {
-          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          access_scope = {
-            type = "cluster"
+  access_entries = merge(
+    {
+      root_admin = {
+        principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        policy_associations = {
+          admin = {
+            policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+            access_scope = {
+              type = "cluster"
+            }
+          }
+        }
+      }
+    },
+    {
+      for k, v in data.aws_iam_role.github_actions : "github_actions_${k}" => {
+        principal_arn = v.arn
+        policy_associations = {
+          admin = {
+            policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+            access_scope = {
+              type = "cluster"
+            }
           }
         }
       }
     }
-
-    github_actions = {
-      principal_arn = data.aws_iam_role.github_actions.arn
-      policy_associations = {
-        admin = {
-          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          access_scope = {
-            type = "cluster"
-          }
-        }
-      }
-    }
-  }
+  )
 
   cluster_addons = {
     coredns = {

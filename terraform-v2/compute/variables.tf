@@ -13,10 +13,10 @@ variable "project_name" {
   default = "nephos"
 }
 
-variable "github_actions_role_name" {
-  description = "Existing IAM role assumed by the GitHub Actions CD workflows."
-  type        = string
-  default     = "nephos-terraform"
+variable "github_actions_role_names" {
+  description = "Existing IAM roles assumed by the GitHub Actions CD workflows."
+  type        = list(string)
+  default     = ["ddesmond-cloud-terraform", "nephos-terraform"]
 }
 
 variable "compute_vpc_cidr" {
