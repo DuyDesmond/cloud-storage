@@ -24,3 +24,5 @@ def decode_token(token: str) -> dict | None:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except jwt.PyJWTError:
         return None
+    
+    
