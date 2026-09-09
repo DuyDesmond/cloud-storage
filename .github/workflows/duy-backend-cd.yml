@@ -7,6 +7,8 @@ on:
     paths:
       - "backend-v2/**"
       - "k8s/**"
+      - "terraform/**"
+      - "terraform-v2/**"
       - ".github/workflows/duy-backend-cd.yml"
 
 permissions:
@@ -64,16 +66,24 @@ jobs:
         run: |
           set -e
 
-          # 1. Fetch CloudFront Domain Name and Distribution ID
-          CLOUDFRONT_DOMAIN=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Origins.Items[0].DomainName=='nephos-dev-frontend-bucket.s3.ap-southeast-1.amazonaws.com'].DomainName" \
-            --output text)
-          test -n "$CLOUDFRONT_DOMAIN"
+          # 1. Fetch CloudFront Domain Name and Distribution ID robustly
+          BUCKET_NAME="nephos-dev-frontend-bucket"
 
           DIST_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Origins.Items[0].DomainName=='nephos-dev-frontend-bucket.s3.ap-southeast-1.amazonaws.com'].Id" \
+            --query "DistributionList.Items[?contains(Origins.Items[0].DomainName, '${BUCKET_NAME}')].Id | [0]" \
             --output text)
-          test -n "$DIST_ID"
+
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" == "None" ]; then
+            echo "Error: Could not find CloudFront Distribution ID for bucket: $BUCKET_NAME"
+            exit 1
+          fi
+
+          CLOUDFRONT_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Id=='${DIST_ID}'].DomainName | [0]" \
+            --output text)
+
+          echo "Found Distribution ID: $DIST_ID"
+          echo "Found CloudFront Domain: $CLOUDFRONT_DOMAIN"
 
           # 2. Apply base Kubernetes resources
           kubectl apply -f k8s/namespace.yaml
@@ -129,8 +139,9 @@ jobs:
           fi
 
           # 5. Apply microservice deployments with the actual ECR registry
-          sed -i "s/YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_REGISTRY}/g" k8s/auth-service.yaml
-          sed -i "s/YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_REGISTRY}/g" k8s/storage-service.yaml
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+          sed -i "s/\${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_REGISTRY}/g" k8s/auth-service.yaml
+          sed -i "s/\${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_REGISTRY}/g" k8s/storage-service.yaml
 
           kubectl apply -f k8s/auth-service.yaml
           kubectl apply -f k8s/storage-service.yaml

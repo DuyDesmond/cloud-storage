@@ -45,5 +45,6 @@ data "terraform_remote_state" "data" {
     bucket = "nephos-tfstate-662904411478"
     key    = "data/terraform.tfstate"
     region = "ap-southeast-1"
+    encrypt = true
   }
 }

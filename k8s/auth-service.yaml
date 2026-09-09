@@ -27,7 +27,7 @@ spec:
               app: auth-service
       containers:
         - name: auth-service
-          image: YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/nephos-dev-auth-service:latest
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/nephos-dev-auth-service:latest
           ports:
             - containerPort: 8000
           envFrom:

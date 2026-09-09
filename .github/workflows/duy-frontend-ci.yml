@@ -6,11 +6,15 @@ on:
     branches: [dev-duy, aws-deploy, duy-aws-deploy]
     paths:
       - "frontend/**"
+      - "terraform/**"
+      - "terraform-v2/**"
       - ".github/workflows/duy-frontend-ci.yml"
   push:
     branches: [dev-duy, aws-deploy, duy-aws-deploy]
     paths:
       - "frontend/**"
+      - "terraform/**"
+      - "terraform-v2/**"
       - ".github/workflows/frontend-ci.yml"
 
 jobs:

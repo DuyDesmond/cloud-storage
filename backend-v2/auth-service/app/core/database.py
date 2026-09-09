@@ -18,6 +18,7 @@ async def init_db_pool() -> asyncpg.Pool:
             max_size=10,
             timeout=30.0,
             command_timeout=60.0,
+            ssl="require"
         )
         print(" Neon PostgreSQL connection pool initialized.")
         return pool

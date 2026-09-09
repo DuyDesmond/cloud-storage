@@ -27,7 +27,7 @@ spec:
               app: storage-service
       containers:
         - name: storage-service
-          image: YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/nephos-dev-storage-service:latest
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/nephos-dev-storage-service:latest
           ports:
             - containerPort: 8000
           envFrom:
