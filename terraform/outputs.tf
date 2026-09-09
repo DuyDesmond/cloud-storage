@@ -13,6 +13,8 @@ output "eks_cluster_name" {
   value       = module.eks.cluster_name
 }
 
+
+
 output "rds_endpoint" {
   description = "RDS instance endpoint"
   value       = aws_db_instance.postgres.endpoint
