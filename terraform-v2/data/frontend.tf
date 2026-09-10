@@ -164,13 +164,6 @@ resource "aws_cloudfront_distribution" "frontend" {
   viewer_certificate {
     cloudfront_default_certificate = true
   }
-
-  lifecycle {
-    ignore_changes = [
-      origin,
-      ordered_cache_behavior
-    ]
-  }
 }
 
 data "aws_iam_policy_document" "frontend_s3" {
