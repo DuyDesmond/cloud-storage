@@ -105,21 +105,27 @@ jobs:
           kubectl apply -f k8s/rabbitmq.yaml
           kubectl apply -f k8s/ingress.yaml
 
-      - name: Run Database Schema Creation Script
+      - name: Run Database Migrations via Kubernetes Jobs
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          # Fetch DATABASE_URL directly from Secrets Manager
-          SECRET_JSON=$(aws secretsmanager get-secret-value \
-            --secret-id nephos-dev-app-secrets \
-            --query SecretString \
-            --output text)
+          set -e
+          
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+          sed -i "s/\${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_REGISTRY}/g" k8s/auth-db-init-job.yaml
+          sed -i "s/\${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_REGISTRY}/g" k8s/storage-db-init-job.yaml
 
-          eval $(echo "$SECRET_JSON" | jq -r 'to_entries | .[] | "export \(.key)=\"\(.value)\""')
-
-          export PYTHONPATH=backend-v2/auth-service
-          python -m app.modules.auth.tables.apply_tables
-
-          export PYTHONPATH=backend-v2/storage-service
-          python -m app.modules.storage.tables.apply_tables
+          echo "Deleting previous migration jobs if they exist..."
+          kubectl delete job auth-db-init -n nephos --ignore-not-found
+          kubectl delete job storage-db-init -n nephos --ignore-not-found
+          
+          echo "Applying migration jobs..."
+          kubectl apply -f k8s/auth-db-init-job.yaml
+          kubectl apply -f k8s/storage-db-init-job.yaml
+          
+          echo "Waiting for jobs to complete..."
+          kubectl wait --for=condition=complete job/auth-db-init -n nephos --timeout=120s
+          kubectl wait --for=condition=complete job/storage-db-init -n nephos --timeout=120s
 
       - name: Update CloudFront ALB Origin & Deploy Microservices
         env:
