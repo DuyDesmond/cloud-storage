@@ -1,12 +1,9 @@
 import asyncio
 import sys
 from pathlib import Path
-
+from app.core import database
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parents[3]
-sys.path.append(str(PROJECT_ROOT))
-from app.core import database
 
 """
 to run this script, DO NOT `cd` INTO THE DIR, type:

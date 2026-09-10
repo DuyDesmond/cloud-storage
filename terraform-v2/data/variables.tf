@@ -31,6 +31,7 @@ variable "db_username" {
 variable "api_origin_domain_name" {
   type        = string
   default     = "pending-alb-deployment.example.com"
+  nullable    = false
   description = "ALB DNS name for the CloudFront /api/* origin. The CI/CD pipeline will automatically overwrite this with the real ALB hostname."
 }
 
@@ -38,4 +39,9 @@ variable "github_actions_role_names" {
   description = "Existing IAM roles assumed by the GitHub Actions CD workflows."
   type        = list(string)
   default     = ["ddesmond-cloud-terraform", "nephos-terraform"]
+}
+
+variable "api_version" {
+  type    = string
+  default = "/api/v2"
 }

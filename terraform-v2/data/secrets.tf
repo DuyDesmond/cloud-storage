@@ -28,5 +28,9 @@ resource "aws_secretsmanager_secret_version" "app_initial" {
     ACCESS_TOKEN_EXPIRE  = "30"
     REFRESH_TOKEN_EXPIRE = "7"
     STORAGE_QUOTA_BYTES  = "21474836480"
+    API_STR              = var.api_version
+    AUTH_SERVICE_URL     = "http://auth-service.${var.project_name}.svc.cluster.local:8000${var.api_version}"
+    BUCKET_NAME          = aws_s3_bucket.storage.bucket
+    BUCKET_ENDPOINT_URL  = "https://s3.${var.aws_region}.amazonaws.com"
   })
 }

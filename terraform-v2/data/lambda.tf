@@ -49,8 +49,8 @@ resource "aws_lambda_function" "trash_purge" {
       ENVIRONMENT          = var.environment
       BUCKET_NAME          = aws_s3_bucket.storage.bucket
       BUCKET_REGION_NAME   = var.aws_region
-      DATABASE_URL         = "postgresql://${var.db_username}@${aws_db_instance.postgres.endpoint}/${var.project_name}"
-      API_STR              = "/api/v2"
+      DATABASE_URL         = "postgresql://${var.db_username}:${urlencode(jsondecode(data.aws_secretsmanager_secret_version.rds_secret_version.secret_string)["password"])}@${aws_db_instance.postgres.endpoint}/${var.project_name}?sslmode=require"
+      API_STR              = var.api_version
       STORAGE_QUOTA_BYTES  = "21474836480"
       SECRET_KEY           = "lambda-internal-placeholder-051004"
       ALGORITHM            = "HS256"

@@ -58,3 +58,17 @@ spec:
                 name: storage-service
                 port:
                   number: 8000
+          - path: /api/*/health/auth*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8000
+          - path: /api/*/health/storage*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: storage-service
+                port:
+                  number: 8000

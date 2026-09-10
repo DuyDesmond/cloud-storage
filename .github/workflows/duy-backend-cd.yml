@@ -37,6 +37,16 @@ jobs:
           role-to-assume: ${{ secrets.DUY_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install DB Migration Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install asyncpg psycopg2-binary boto3 pydantic pydantic-settings
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2.1.7
@@ -60,7 +70,7 @@ jobs:
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
-      - name: Deploy to Kubernetes and Update CloudFront Origin
+      - name: Deploy Base K8s Resources & Fetch CloudFront Info
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
@@ -95,7 +105,35 @@ jobs:
           kubectl apply -f k8s/rabbitmq.yaml
           kubectl apply -f k8s/ingress.yaml
 
-          # 3. Wait for AWS Load Balancer Controller to assign the ALB hostname
+      - name: Run Database Schema Creation Script
+        run: |
+          # Fetch DATABASE_URL directly from Secrets Manager
+          SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id nephos-dev-app-secrets \
+            --query SecretString \
+            --output text)
+
+          eval $(echo "$SECRET_JSON" | jq -r 'to_entries | .[] | "export \(.key)=\"\(.value)\""')
+
+          export PYTHONPATH=backend-v2/auth-service
+          python -m app.modules.auth.tables.apply_tables
+
+          export PYTHONPATH=backend-v2/storage-service
+          python -m app.modules.storage.tables.apply_tables
+
+      - name: Update CloudFront ALB Origin & Deploy Microservices
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -e
+
+          # 1. Fetch Distribution ID
+          BUCKET_NAME="nephos-dev-frontend-bucket"
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?contains(Origins.Items[0].DomainName, '${BUCKET_NAME}')].Id | [0]" \
+            --output text)
+
+          # 2. Wait for AWS Load Balancer Controller to assign the ALB hostname
           echo "Waiting for the api-ingress ALB hostname..."
           ALB_HOSTNAME=""
           for attempt in $(seq 1 30); do
@@ -111,12 +149,11 @@ jobs:
 
           if [ -z "$ALB_HOSTNAME" ]; then
             echo "Error: Timed out waiting for ALB hostname to be provisioned."
-            echo "--- Ingress Status ---"
             kubectl describe ingress api-ingress -n nephos
             exit 1
           fi
 
-          # 4. Patch CloudFront distribution origin with the new ALB hostname
+          # 3. Patch CloudFront distribution origin with the new ALB hostname
           aws cloudfront get-distribution-config --id "$DIST_ID" > dist-config.json
           ETAG=$(jq -r '.ETag' dist-config.json)
 
@@ -138,7 +175,7 @@ jobs:
             echo "CloudFront ALB Origin is already set to $ALB_HOSTNAME. Skipping update."
           fi
 
-          # 5. Apply microservice deployments with the actual ECR registry
+          # 4. Apply microservice deployments with the actual ECR registry
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
           sed -i "s/\${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_REGISTRY}/g" k8s/auth-service.yaml
           sed -i "s/\${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_REGISTRY}/g" k8s/storage-service.yaml
@@ -146,7 +183,7 @@ jobs:
           kubectl apply -f k8s/auth-service.yaml
           kubectl apply -f k8s/storage-service.yaml
 
-          # 6. Force rollout to pull latest images and verify completion
+          # 5. Force rollout to pull latest images and verify completion
           kubectl rollout restart deployment auth-service -n nephos
           kubectl rollout restart deployment storage-service -n nephos
           kubectl rollout status deployment/auth-service -n nephos --timeout=5m
