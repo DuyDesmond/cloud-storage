@@ -1,0 +1,11 @@
+<div class="shared-link-container">
+  @if (isLoading()) {
+    <mat-spinner diameter="40"></mat-spinner>
+    <p>Verifying link...</p>
+  } @else if (error()) {
+    <div class="error-message">
+      <p>{{ error() }}</p>
+      <button (click)="goHome()">Go to Home</button>
+    </div>
+  }
+</div>

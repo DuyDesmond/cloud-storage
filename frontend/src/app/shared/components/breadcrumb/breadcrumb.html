@@ -1,0 +1,40 @@
+<div class="breadcrumb-container">
+  @if (breadcrumbs().length > 0) {
+  <nav class="breadcrumb-nav" aria-label="Folder path">
+    <a
+      class="breadcrumb-link"
+      [routerLink]="homeLink()"
+      (dragover)="onDragOverCrumb($event, null)"
+      (dragleave)="onDragLeaveCrumb($event, null)"
+      (drop)="onDropCrumb($event, null)"
+      [class.is-drag-target]="isDragTargetRoot()"
+    >
+      <mat-icon class="breadcrumb-home-icon">{{ homeIcon() }}</mat-icon>
+    </a>
+    @for (crumb of breadcrumbs(); track crumb.id; let last = $last) {
+    <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
+    @if (!last) {
+    <a
+      class="breadcrumb-link"
+      [routerLink]="section() === 'shared-with-me' ? '/drive/shared-with-me/folder/' + crumb.id : (section() === 'shared' ? '/public-share/folder/' + crumb.id : '/drive/root/folder/' + crumb.id)"
+      (dragover)="onDragOverCrumb($event, crumb.id)"
+      (dragleave)="onDragLeaveCrumb($event, crumb.id)"
+      (drop)="onDropCrumb($event, crumb.id)"
+      [class.is-drag-target]="dragTargetCrumbId() === crumb.id"
+      >{{ crumb.name }}</a
+    >
+    } @else {
+    <span class="breadcrumb-current">{{ crumb.name }}</span>
+    } }
+  </nav>
+  } @else {
+  <div class="breadcrumb-title-area">
+    <h2>{{ title() }}</h2>
+    <p>{{ description() }}</p>
+  </div>
+  }
+
+  <div class="breadcrumb-actions">
+    <ng-content></ng-content>
+  </div>
+</div>

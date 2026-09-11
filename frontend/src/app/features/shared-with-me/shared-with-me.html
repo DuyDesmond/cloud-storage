@@ -1,0 +1,46 @@
+<div class="dashboard-wrapper">
+  <app-dashboard-header></app-dashboard-header>
+
+  <div class="workspace-container">
+    <app-side-panel [activeNav]="currentNav()"></app-side-panel>
+
+    <main class="main-canvas">
+      <section class="content-section">
+        <header class="section-header">
+          <app-breadcrumb
+            [breadcrumbs]="breadcrumbs()"
+            section="shared-with-me"
+            [title]="pageTitle()"
+            description="Files and folders shared with you."
+          >
+          </app-breadcrumb>
+        </header>
+
+        @if (isLoading()) {
+        <div class="loading-state">
+          <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+          <p class="loading-label">Retrieving contents</p>
+        </div>
+        } @else if (items().length === 0) {
+        <div class="empty-state">
+          <mat-icon class="empty-icon">folder_open</mat-icon>
+          <p class="empty-label">No items have been shared with you.</p>
+        </div>
+        } @else {
+        <div class="cards-grid">
+          @for (item of items(); track item.id) {
+          <app-drive-item-card
+            [item]="item"
+            (open)="onOpenItem($event)"
+            (download)="onDownloadItem($event)"
+            (share)="onShareItem($event)"
+          ></app-drive-item-card>
+          }
+        </div>
+        }
+      </section>
+    </main>
+  </div>
+
+  <app-mobile-bottom-nav [activeNav]="currentNav()"></app-mobile-bottom-nav>
+</div>

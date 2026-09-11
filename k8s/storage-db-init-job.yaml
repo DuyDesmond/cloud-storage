@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: storage-db-init
+  namespace: nephos
+spec:
+  template:
+    metadata:
+      labels:
+        app: storage-db-init
+    spec:
+      serviceAccountName: storage-service-sa
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
+        fsGroup: 2000
+      containers:
+        - name: storage-db-init
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/nephos-dev-storage-service:latest
+          command: ["python", "-m", "app.modules.files.tables.apply_tables"]
+          envFrom:
+            - configMapRef:
+                name: nephos-config
+            - secretRef:
+                name: nephos-app-secrets
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "aws-secrets"

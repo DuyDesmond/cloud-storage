@@ -1,6 +1,12 @@
 <header class="dashboard-header">
   <a routerLink="/drive" class="logo-area">
-    <img src="/icon_nephos_logo.png" alt="Nephos Logo" class="brand-logo-img" />
+    <img
+      ngSrc="/icon_nephos_logo.png"
+      alt="Nephos Logo"
+      class="brand-logo-img"
+      width="32"
+      height="32"
+    />
     <span class="brand-name">Nephos</span>
   </a>
 
@@ -14,16 +20,6 @@
   </div>
 
   <div class="header-actions">
-    <button
-      mat-flat-button
-      color="primary"
-      class="upload-btn"
-      (click)="upload.emit()"
-    >
-      <mat-icon>cloud_upload</mat-icon>
-      <span class="hide-mobile">Upload</span>
-    </button>
-
     <button
       mat-icon-button
       class="profile-avatar"

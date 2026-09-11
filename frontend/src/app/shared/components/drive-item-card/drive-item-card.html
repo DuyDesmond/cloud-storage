@@ -1,0 +1,83 @@
+<div
+  class="drive-card"
+  (dblclick)="onCardClick()"
+  [draggable]="!readonly()"
+  (dragstart)="onDragStart($event)"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave($event)"
+  (drop)="onDrop($event)"
+  [class.is-drag-target]="isDragTarget()"
+>
+  <div class="card-header">
+    <span class="card-title" [title]="item().name">{{ item().name }}</span>
+    @if (!readonly()) {
+    <button
+      mat-icon-button
+      [matMenuTriggerFor]="menu"
+      class="action-btn"
+      (click)="$event.stopPropagation()"
+    >
+      <mat-icon>more_vert</mat-icon>
+    </button>
+    }
+
+    <mat-menu #menu="matMenu">
+      @if (item().itemType === 'file' && !isTrashView()) {
+      <button mat-menu-item (click)="onDownload($event)">
+        <mat-icon>download</mat-icon>
+        <span>Download</span>
+      </button>
+      } @if (!isTrashView()) {
+      <button mat-menu-item (click)="onShare($event)">
+        <mat-icon>share</mat-icon>
+        <span>Share</span>
+      </button>
+      } @if (isTrashView()) {
+      <button mat-menu-item (click)="onRestore($event)">
+        <mat-icon>restore</mat-icon>
+        <span>Restore</span>
+      </button>
+
+      <button
+        mat-menu-item
+        class="danger-item"
+        (click)="onPermanentDelete($event)"
+      >
+        <mat-icon>delete_forever</mat-icon>
+        <span>Delete Permanently</span>
+      </button>
+      } @else {
+      <button mat-menu-item class="danger-item" (click)="onTrash($event)">
+        <mat-icon>delete</mat-icon>
+        <span>Move to Trash</span>
+      </button>
+      }
+    </mat-menu>
+  </div>
+
+  <div class="card-preview">
+    @if (fileItem()?.previewUrl) {
+    <img [src]="fileItem()!.previewUrl" [alt]="item().name" />
+    } @else {
+    <mat-icon class="large-icon" [class]="item().itemType">
+      {{ item().itemType === 'folder' ? 'folder' : (fileItem()?.mimeType |
+      mimeIcon) }}
+    </mat-icon>
+    }
+  </div>
+
+  <div class="card-footer">
+    <div class="meta-info">
+      <span>{{ item().updatedAt | date:'MMM d, y, h:mm a' }}</span>
+      @if (fileItem()) {
+      <span>{{ fileItem()!.sizeBytes | fileSize }}</span>
+      }
+    </div>
+    <mat-icon
+      class="type-icon"
+      [class.folder-color]="item().itemType === 'folder'"
+    >
+      {{ item().itemType === 'folder' ? 'folder' : 'description' }}
+    </mat-icon>
+  </div>
+</div>

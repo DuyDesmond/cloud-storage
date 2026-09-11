@@ -1,0 +1,71 @@
+<div class="public-share-wrapper">
+  <header class="public-header">
+    <a class="brand-container" (click)="goHome()" style="cursor: pointer;">
+      <img ngSrc="/icon_nephos_logo.png" alt="Nephos Logo" class="brand-logo-img" width="32" height="32" />
+      <span class="brand-name">Nephos</span>
+    </a>
+  </header>
+
+  <main class="public-content">
+    @if (isLoading()) {
+      <div class="loading-state">
+        <mat-spinner diameter="40"></mat-spinner>
+        <p>Loading share...</p>
+      </div>
+    } @else if (error()) {
+      <div class="error-state">
+        <mat-icon color="warn" class="huge-icon">error_outline</mat-icon>
+        <h2>Oops!</h2>
+        <p>{{ error() }}</p>
+        <button mat-flat-button color="primary" (click)="goHome()">
+          Go to Nephos
+        </button>
+      </div>
+    } @else {
+      @if (isFile() && fileItem()) {
+        <!-- File View -->
+        <div class="file-view">
+          <mat-icon class="file-icon huge-icon">insert_drive_file</mat-icon>
+          <h1 class="file-name">{{ fileItem()!.name }}</h1>
+          <p class="file-meta">{{ formatSize(fileItem()!.sizeBytes) }} • {{ fileItem()!.mimeType || 'Unknown Type' }}</p>
+          <button mat-flat-button color="primary" class="download-btn" (click)="downloadCurrentFile()">
+            <mat-icon>download</mat-icon>
+            Download File
+          </button>
+        </div>
+      } @else {
+        <!-- Folder View -->
+        <div class="folder-view">
+          <header class="folder-header">
+            @if (breadcrumbs().length > 0) {
+              <app-breadcrumb
+                [breadcrumbs]="breadcrumbs()"
+                section="shared"
+              ></app-breadcrumb>
+            } @else {
+              <h2>Shared Folder</h2>
+            }
+          </header>
+
+          @if (items().length === 0) {
+            <div class="empty-state">
+              <mat-icon class="empty-icon">folder_open</mat-icon>
+              <p class="empty-label">This folder is empty.</p>
+            </div>
+          } @else {
+            <div class="cards-grid">
+              @for (item of items(); track item.id) {
+                <app-drive-item-card
+                  [item]="item"
+                  [readonly]="true"
+                  (open)="onOpenItem($event)"
+                  (download)="onDownloadItem($event)"
+                ></app-drive-item-card>
+              }
+            </div>
+          }
+        </div>
+      }
+    }
+  </main>
+</div>

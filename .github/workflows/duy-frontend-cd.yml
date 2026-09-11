@@ -1,0 +1,62 @@
+name: Duy's Frontend CD (Deploy to AWS)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev-duy, aws-deploy, duy-aws-deploy]
+    paths:
+      - "frontend/**"
+      - "terraform/**"
+      - "terraform-v2/**"
+      - ".github/workflows/duy-frontend-cd.yml"
+
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-1
+  S3_BUCKET: nephos-dev-frontend-bucket
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for OIDC
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.4
+        with:
+          role-to-assume: ${{ secrets.DUY_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Build Angular App
+        working-directory: ./frontend
+        run: npm run build -- --configuration production
+
+      - name: Deploy to S3
+        run: |
+          aws s3 sync ./frontend/dist/frontend/browser s3://${{ env.S3_BUCKET }}/ --delete
+
+      - name: Invalidate CloudFront Cache
+        run: |
+          CLOUDFRONT_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[0].DomainName=='${{ env.S3_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com'].Id | [0]" --output text)
+          if [ -n "$CLOUDFRONT_ID" ] && [ "$CLOUDFRONT_ID" != "None" ]; then aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_ID --paths "/*"; else echo "Could not find CloudFront Distribution for bucket ${{ env.S3_BUCKET }}. Skipping invalidation."; fi
