@@ -54,6 +54,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "project": settings.PROJECT_NAME, "service": "auth"}

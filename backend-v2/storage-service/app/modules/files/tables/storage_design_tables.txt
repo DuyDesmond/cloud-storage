@@ -34,8 +34,7 @@
 --     a trigger CREATE with no DROP IF EXISTS guard -- none of it usable).
 -- ============================================================================
 
--- CREATE SCHEMA IF NOT EXISTS storage;
--- SET search_path TO nephos, public;
+CREATE SCHEMA IF NOT EXISTS storage;
 
 -- ============================================================================
 -- EXTENSIONS & TYPES

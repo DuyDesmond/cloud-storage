@@ -80,7 +80,7 @@ jobs:
           BUCKET_NAME="nephos-dev-frontend-bucket"
 
           DIST_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?contains(Origins.Items[0].DomainName, '${BUCKET_NAME}')].Id | [0]" \
+            --query "DistributionList.Items[?contains(Origins.Items[0].DomainName, '${BUCKET_NAME}')].Id | [2]" \
             --output text)
 
           if [ -z "$DIST_ID" ] || [ "$DIST_ID" == "None" ]; then
@@ -136,7 +136,7 @@ jobs:
           # 1. Fetch Distribution ID
           BUCKET_NAME="nephos-dev-frontend-bucket"
           DIST_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?contains(Origins.Items[0].DomainName, '${BUCKET_NAME}')].Id | [0]" \
+            --query "DistributionList.Items[?contains(Origins.Items[0].DomainName, '${BUCKET_NAME}')].Id | [2]" \
             --output text)
 
           # 2. Wait for AWS Load Balancer Controller to assign the ALB hostname
