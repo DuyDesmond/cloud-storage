@@ -103,7 +103,9 @@ jobs:
           kubectl apply -f k8s/aws-secrets-provider.yaml
           kubectl apply -f k8s/redis.yaml
           kubectl apply -f k8s/rabbitmq.yaml
+          kubectl apply -f k8s/nginx-config.yaml
           kubectl apply -f k8s/ingress.yaml
+          kubectl apply -f k8s/alb-ingress.yaml
 
       - name: Run Database Migrations via Kubernetes Jobs
         env:
@@ -140,22 +142,22 @@ jobs:
             --output text)
 
           # 2. Wait for AWS Load Balancer Controller to assign the ALB hostname
-          echo "Waiting for the api-ingress ALB hostname..."
+          echo "Waiting for the alb-ingress ALB hostname..."
           ALB_HOSTNAME=""
           for attempt in $(seq 1 30); do
-            ALB_HOSTNAME=$(kubectl get ingress api-ingress -n nephos \
+            ALB_HOSTNAME=$(kubectl get ingress alb-ingress -n ingress-nginx \
               -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
             if [ -n "$ALB_HOSTNAME" ]; then
               echo "Discovered ALB Hostname: $ALB_HOSTNAME"
               break
             fi
-            echo "Waiting for api-ingress ALB hostname (attempt $attempt/30)..."
+            echo "Waiting for alb-ingress ALB hostname (attempt $attempt/30)..."
             sleep 10
           done
 
           if [ -z "$ALB_HOSTNAME" ]; then
             echo "Error: Timed out waiting for ALB hostname to be provisioned."
-            kubectl describe ingress api-ingress -n nephos
+            kubectl describe ingress alb-ingress -n ingress-nginx
             exit 1
           fi
 
