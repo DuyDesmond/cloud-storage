@@ -4,6 +4,7 @@ import uuid
 from typing import Literal
 
 import asyncpg
+import logging
 from fastapi import APIRouter, Depends, File, UploadFile, status, Request
 from app.core.rate_limit import limiter
 
@@ -46,6 +47,7 @@ def map_domain_exceptions(func):
 
 
 router = APIRouter(prefix="/storage", tags=["File Operations"])
+logger = logging.getLogger(__name__)
 
 @router.get("/retrieve", response_model=schemas.StorageContentResponse)
 @limiter.limit("100/minute")
@@ -108,7 +110,9 @@ async def upload_file(request: Request,
     current_user: dict = Depends(get_current_user),
     service: FileUploadService = Depends(FileUploadService),
 ):
-    return await service.upload_file(current_user, parent_folder_id, upload_file, on_collision)
+    res = await service.upload_file(current_user, parent_folder_id, upload_file, on_collision)
+    logger.info(f"User {current_user['id']} successfully uploaded file {upload_file.filename}")
+    return res
 
 @router.post("/upload/presign", response_model=schemas.PresignedUploadResponse)
 @limiter.limit("30/minute")
@@ -184,7 +188,12 @@ async def download_file(request: Request,
     service: FileUploadService = Depends(FileUploadService),
 ):
     range_header = request.headers.get("range") or request.headers.get("Range")
-    return await service.download_file_stream(current_user, file_id, range_header)
+    res = await service.download_file_stream(current_user, file_id, range_header)
+    if current_user:
+        logger.info(f"User {current_user['id']} successfully downloaded file {file_id}")
+    else:
+        logger.info(f"Anonymous user successfully downloaded file {file_id}")
+    return res
 
 
 @router.patch("/folders/{folder_id}/move", response_model=schemas.FolderResponse)
@@ -230,7 +239,9 @@ async def delete_file(request: Request,
     current_user: dict = Depends(get_current_user),
     service: FileManagementService = Depends(FileManagementService),
 ):
-    return await service.delete_file(current_user, file_id)
+    res = await service.delete_file(current_user, file_id)
+    logger.info(f"User {current_user['id']} successfully soft-deleted file {file_id}")
+    return res
 
 
 @router.delete("/trash/files/{file_id}", response_model=schemas.MessageResponse)

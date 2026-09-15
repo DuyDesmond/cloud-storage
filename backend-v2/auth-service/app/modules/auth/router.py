@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, Request, Response, status, HTTPException
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.service import AuthService
@@ -6,6 +7,7 @@ from app.core.rate_limit import limiter
 from app.core.exceptions import DuplicateRecordError, InvalidCredentialsError, UserNotFoundError
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+logger = logging.getLogger(__name__)
 
 def set_auth_cookies(response: Response, tokens: dict) -> None:
     response.set_cookie(
@@ -38,6 +40,7 @@ async def register(
     except DuplicateRecordError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     set_auth_cookies(response, tokens)
+    logger.info(f"User {user.email} successfully registered")
     return user
 
 @router.post("/login", response_model=schemas.UserResponse)
@@ -53,6 +56,7 @@ async def login(
     except InvalidCredentialsError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     set_auth_cookies(response, tokens)
+    logger.info(f"User {user.email} successfully logged in")
     return user
 
 
@@ -87,6 +91,7 @@ async def logout(
     res = await auth_service.logout_user(current_user["id"])
     response.delete_cookie(key="access_token", httponly=True, secure=True, samesite="lax")
     response.delete_cookie(key="refresh_token", httponly=True, secure=True, samesite="lax")
+    logger.info(f"User {current_user['id']} successfully logged out")
     return res
 
 
