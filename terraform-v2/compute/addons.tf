@@ -36,6 +36,36 @@ module "eks_blueprints_addons" {
       }
     })]
   }
+
+  helm_releases = {
+    aws-for-fluent-bit = {
+      description      = "A Helm chart to deploy aws-for-fluent-bit"
+      namespace        = "kube-system"
+      name             = "aws-for-fluent-bit"
+      chart            = "aws-for-fluent-bit"
+      repository       = "https://aws.github.io/eks-charts"
+      version          = "0.1.32"
+      
+      values = [
+        yamlencode({
+          cloudWatch = {
+            enabled = true
+            region  = var.aws_region
+            logGroupName = "/aws/eks/${module.eks.cluster_name}/application"
+          }
+          firehose = {
+            enabled = false
+          }
+          kinesis = {
+            enabled = false
+          }
+          elasticsearch = {
+            enabled = false
+          }
+        })
+      ]
+    }
+  }
 }
 
 provider "helm" {

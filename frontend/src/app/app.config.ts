@@ -14,6 +14,7 @@ import {
 } from '@angular/common/http';
 import { authRefreshInterceptor } from './core/auth/interceptors/auth-refresh.interceptor';
 import { sharePasswordInterceptor } from './core/share/interceptors/share-password.interceptor';
+import { correlationIdInterceptor } from './core/logging/interceptors/correlation-id.interceptor';
 
 import { routes } from './app.routes';
 
@@ -22,7 +23,11 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(
-      withInterceptors([authRefreshInterceptor, sharePasswordInterceptor]),
+      withInterceptors([
+        authRefreshInterceptor,
+        sharePasswordInterceptor,
+        correlationIdInterceptor,
+      ]),
       withInterceptorsFromDi(),
     ),
     provideAppInitializer(() =>

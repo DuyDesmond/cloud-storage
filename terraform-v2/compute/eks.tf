@@ -68,6 +68,7 @@ module "eks" {
     ami_type = "AL2023_x86_64_STANDARD"
     iam_role_additional_policies = {
       AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      CloudWatchAgentServerPolicy  = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
     }
   }
 

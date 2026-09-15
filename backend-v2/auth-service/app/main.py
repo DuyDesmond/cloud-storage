@@ -32,9 +32,12 @@ async def lifespan(app: FastAPI):
 
 
 from app.core.rate_limit import setup_rate_limiting
+from app.core.logging import setup_logging, CorrelationIdMiddleware
 
+setup_logging()
 app = FastAPI(title=settings.PROJECT_NAME + " - Auth Service", lifespan=lifespan)
 setup_rate_limiting(app)
+app.add_middleware(CorrelationIdMiddleware)
 
 # Register routes
 app.include_router(auth_router, prefix=settings.API_STR)
