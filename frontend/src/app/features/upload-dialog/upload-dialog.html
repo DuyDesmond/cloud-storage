@@ -1,0 +1,135 @@
+<div class="dialog-header">
+  <h2 mat-dialog-title>Upload or Create</h2>
+  <button mat-icon-button (click)="close()">
+    <mat-icon>close</mat-icon>
+  </button>
+</div>
+
+<mat-dialog-content class="dialog-body">
+  @if (isCreatingFolder()) {
+  <div class="folder-creation-box">
+    <h3>New Folder</h3>
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Folder name</mat-label>
+      <input
+        matInput
+        [ngModel]="newFolderName()"
+        (ngModelChange)="newFolderName.set($event)"
+        placeholder="Untitled folder"
+        (keyup.enter)="submitFolder()"
+        autofocus
+      />
+    </mat-form-field>
+
+    <div class="folder-actions">
+      <button mat-button (click)="toggleFolderInput()">Cancel</button>
+      <button
+        mat-flat-button
+        color="primary"
+        [disabled]="!newFolderName().trim()"
+        (click)="submitFolder()"
+      >
+        Create
+      </button>
+    </div>
+  </div>
+  } @else {
+  <div
+    class="dropzone"
+    [class.active]="isDragging()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave($event)"
+    (drop)="onDrop($event)"
+  >
+    <mat-icon class="cloud-icon">cloud_upload</mat-icon>
+    <p class="primary-text">Drag and drop files or folders here</p>
+    <p class="secondary-text">or choose an option below</p>
+
+    <div class="browse-buttons">
+      <input
+        #fileInput
+        type="file"
+        multiple
+        (change)="onFileSelected($event)"
+        style="display: none"
+      />
+
+      <input
+        #folderInput
+        type="file"
+        webkitdirectory
+        directory
+        (change)="onFileSelected($event)"
+        style="display: none"
+      />
+
+      <button mat-stroked-button (click)="fileInput.click()">
+        <mat-icon>upload_file</mat-icon>
+        Browse Files
+      </button>
+
+      <button mat-stroked-button (click)="folderInput.click()">
+        <mat-icon>folder_open</mat-icon>
+        Browse Folder
+      </button>
+    </div>
+  </div>
+
+  @if (traversedFolders().length > 0) {
+  <div class="selected-files-list">
+    <h4>Folders to upload ({{ traversedFolders().length }})</h4>
+    <ul>
+      @for (folder of traversedFolders(); track $index) {
+      <li>
+        <div class="file-info">
+          <mat-icon>folder</mat-icon>
+          <span class="file-name">{{ folder.name }}</span>
+        </div>
+        <button mat-icon-button (click)="removeFolder($index)">
+          <mat-icon>close</mat-icon>
+        </button>
+      </li>
+      }
+    </ul>
+  </div>
+  } @if (selectedFiles().length > 0) {
+  <div class="selected-files-list">
+    <h4>Files to upload ({{ selectedFiles().length }})</h4>
+    <ul>
+      @for (file of selectedFiles(); track $index) {
+      <li>
+        <div class="file-info">
+          <mat-icon>insert_drive_file</mat-icon>
+          <span class="file-name">{{ file.name }}</span>
+        </div>
+        <button mat-icon-button (click)="removeFile($index)">
+          <mat-icon>close</mat-icon>
+        </button>
+      </li>
+      }
+    </ul>
+  </div>
+  }
+
+  <div class="extra-actions">
+    <button mat-button color="primary" (click)="toggleFolderInput()">
+      <mat-icon>create_new_folder</mat-icon>
+      New Folder
+    </button>
+  </div>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="close()">Cancel</button>
+  @if (!isCreatingFolder()) {
+  <button
+    mat-flat-button
+    color="primary"
+    [disabled]="selectedFiles().length === 0 && traversedFolders().length === 0"
+    (click)="confirmUpload()"
+  >
+    Upload
+  </button>
+  }
+</mat-dialog-actions>

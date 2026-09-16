@@ -1,45 +1,35 @@
-import { Component, input, output, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { Component, input, output, inject } from '@angular/core';
+import { UpperCasePipe } from '@angular/common';
+import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import { SidePanelNavKey } from '../side-panel/side-panel';
-
-export type NavRoute = 'drive' | 'recent' | 'starred' | 'trash' | '';
+import { SidePanelNavKey, SidePanelNavItem } from '../side-panel/side-panel'; // Adjust path if necessary
 
 @Component({
   selector: 'app-mobile-bottom-nav',
-  standalone: true,
-  imports: [CommonModule, MatIconModule],
+  imports: [MatIconModule, UpperCasePipe],
   templateUrl: './mobile-bottom-nav.html',
-  styleUrls: ['./mobile-bottom-nav.scss'],
+  styleUrl: './mobile-bottom-nav.scss',
 })
 export class MobileBottomNav {
   private router = inject(Router);
-  isProfileActive = signal<boolean>(false);
-
-  currentNav = input<string>('');
+  activeNav = input<SidePanelNavKey>('home');
+  navChange = output<SidePanelNavKey>();
   upload = output<void>();
-  navChange = output<string>();
 
-  isActive(path: string): boolean {
-    if (this.currentNav()) {
-      return this.currentNav() === path;
-    }
-    if (
-      path === 'drive' &&
-      (this.router.url === '/' || this.router.url.includes('/drive'))
-    ) {
-      return true;
-    }
-    return this.router.url.includes(path);
-  }
+  navItems: SidePanelNavItem[] = [
+    { key: 'home', icon: 'home', label: 'Home', route: '/drive/root' },
+    {
+      key: 'shared',
+      icon: 'group',
+      label: 'Shared with me',
+      route: '/drive/shared-with-me',
+    },
+    { key: 'starred', icon: 'star', label: 'Favorites', route: '/drive/root' },
+    { key: 'trash', icon: 'delete', label: 'Trash', route: '/trash' },
+  ];
 
-  navigateTo(route: NavRoute): void {
-    const routePath = route === 'drive' ? '/drive' : `/${route}`;
-    this.router.navigateByUrl(routePath);
-  }
-
-  onUploadTrigger(): void {
-    this.upload.emit();
+  onNavClick(item: SidePanelNavItem): void {
+    this.navChange.emit(item.key);
+    this.router.navigateByUrl(item.route);
   }
 }

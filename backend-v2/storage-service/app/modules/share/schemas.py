@@ -1,0 +1,54 @@
+from pydantic import BaseModel, EmailStr
+from typing import Literal, Optional, List
+from uuid import UUID
+from datetime import datetime
+
+class ShareBaseRequest(BaseModel):
+    target_id: UUID
+    is_file: bool
+
+class ShareWithUserRequest(ShareBaseRequest):
+    email: EmailStr
+    permission: Literal['view', 'edit'] = 'view'
+    password: Optional[str] = None
+
+class UpdateUserShareRequest(ShareWithUserRequest):
+    pass
+
+class RevokeUserShareRequest(ShareBaseRequest):
+    email: EmailStr
+
+class SetPublicLinkRequest(ShareBaseRequest):
+    permission: Literal['view', 'edit'] = 'view'
+    password: Optional[str] = None
+    enabled: bool = True
+
+class RevokePublicLinkRequest(ShareBaseRequest):
+    pass
+
+class SharedUserResponse(BaseModel):
+    email: str
+    name: str
+    permission: Literal['view', 'edit']
+    has_password: bool = False
+
+class PublicLinkStateResponse(BaseModel):
+    enabled: bool
+    permission: Literal['view', 'edit']
+    has_password: bool
+    link: Optional[str] = None
+
+class ShareStateResponse(BaseModel):
+    public_link: PublicLinkStateResponse
+    users: List[SharedUserResponse]
+
+class GenericMessageResponse(BaseModel):
+    message: str
+
+class VisitPublicLinkResponse(BaseModel):
+    message: str
+    is_file: bool
+    target_id: UUID
+    file_name: Optional[str] = None
+    mime_type: Optional[str] = None
+    size_bytes: Optional[int] = None

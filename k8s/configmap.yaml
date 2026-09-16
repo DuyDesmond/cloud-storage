@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nephos-config
+  namespace: nephos
+data:
+  ENVIRONMENT: "dev"
+  REDIS_URL: "redis://redis.nephos.svc.cluster.local:6379/0"
+  RABBITMQ_URL: "amqp://guest:guest@rabbitmq.nephos.svc.cluster.local:5672/"
+  CORS_ORIGINS: "http://localhost:4200, https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net"

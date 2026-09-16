@@ -1,5 +1,6 @@
-import { Component, inject, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { FileOperationsService } from '../../core/file-operations/services/file-operations.service';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
+
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatButtonModule } from '@angular/material/button';
@@ -8,10 +9,15 @@ import {
   SidePanel,
   SidePanelNavKey,
 } from '../../shared/components/side-panel/side-panel';
-import { HostBinding } from '@angular/core';
 import { AuthService } from '@core/auth/services/auth.service';
 import { Router } from '@angular/router';
 import { MobileBottomNav } from '../../shared/components/mobile-bottom-nav/mobile-bottom-nav';
+import { FileSizePipe } from '../../shared/pipes/file-size.pipe';
+import { StorageStateService } from '../../core/file-operations/services/storage-state.service';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatDialog } from '@angular/material/dialog';
+import { ConfirmDialog } from '../../shared/components/confirm-dialog/confirm-dialog';
+import { ChangePasswordDialogComponent } from '../../shared/components/change-password-dialog/change-password-dialog';
 
 export interface StorageCategory {
   name: string;
@@ -37,22 +43,25 @@ export type ActionKey =
 
 @Component({
   selector: 'app-user-profile',
-  standalone: true,
   imports: [
-    CommonModule,
     MatIconModule,
     MatProgressBarModule,
     MatButtonModule,
     DashboardHeader,
     SidePanel,
     MobileBottomNav,
+    FileSizePipe,
   ],
   templateUrl: './user-profile.html',
-  styleUrls: ['./user-profile.scss'],
+  styleUrl: './user-profile.scss',
 })
-export class UserProfile {
+export class UserProfile implements OnInit {
   private authService = inject(AuthService);
   private router = inject(Router);
+  private fileService = inject(FileOperationsService);
+  private snackBar = inject(MatSnackBar);
+  private dialog = inject(MatDialog);
+  readonly storageState = inject(StorageStateService);
 
   currentUser = this.authService.currentUser;
   userName = computed(() => this.currentUser()?.full_name ?? 'Guest User');
@@ -62,13 +71,10 @@ export class UserProfile {
   activeSideNav = signal<SidePanelNavKey>('');
   isProfileActive = signal<boolean>(true);
 
-  user = signal({
+  user = computed(() => ({
     name: this.userName(),
     email: this.userEmail(),
-  });
-
-  usedStorage = signal<number>(4.2);
-  totalStorage = signal<number>(15.0);
+  }));
 
   storageCategories = signal<StorageCategory[]>([
     {
@@ -131,16 +137,14 @@ export class UserProfile {
     },
   ]);
 
+  ngOnInit(): void {
+    this.storageState.refreshStorageUsage();
+  }
+
   // Triggered when user clicks the profile icon in app-dashboard-header
   onProfileHeaderClick(): void {
     this.isProfileActive.set(true);
     this.activeSideNav.set(''); // Clear active highlight on side panel links
-  }
-
-  // Triggered when user navigates using the side panel or mobile bottom nav
-  switchNav(navItem: SidePanelNavKey): void {
-    this.activeSideNav.set(navItem);
-    this.isProfileActive.set(false);
   }
 
   onUploadTrigger(): void {
@@ -177,37 +181,47 @@ export class UserProfile {
   }
 
   private handleChangePassword(): void {
-    const currentPass = window.prompt('Enter your current password:');
-    if (!currentPass) return;
+    const dialogRef = this.dialog.open(ChangePasswordDialogComponent, {
+      width: '400px'
+    });
 
-    const newPass = window.prompt('Enter your new passwo3 rd (min 8 chars):');
-    if (!newPass) return;
-
-    this.authService.changePassword(currentPass, newPass).subscribe({
-      next: (res) => {
-        alert(res.message);
-      },
-      error: (err) => {
-        alert(err.error?.detail ?? 'Failed to change password');
-      },
+    dialogRef.afterClosed().subscribe((result) => {
+      if (result) {
+        this.authService.changePassword(result.currentPassword, result.newPassword).subscribe({
+          next: (res) => {
+            this.snackBar.open(res.message, 'Close', { duration: 3000 });
+          },
+          error: (err) => {
+            this.snackBar.open(err.error?.detail ?? 'Failed to change password', 'Close', { duration: 3000 });
+          },
+        });
+      }
     });
   }
 
   private handleDeleteAccount(): void {
-    const confirmed = window.confirm(
-      'Are you sure you want to permanently delete your account? This action cannot be undone.',
-    );
+    const dialogRef = this.dialog.open(ConfirmDialog, {
+      width: '400px',
+      data: {
+        title: 'Delete Account',
+        message: 'Are you sure you want to permanently delete your account? This action cannot be undone.',
+        confirmText: 'Delete Account',
+        isDestructive: true,
+      }
+    });
 
-    if (confirmed) {
-      this.authService.deleteAccount().subscribe({
-        next: (res) => {
-          alert(res.message);
-          this.router.navigate(['/login']);
-        },
-        error: (err) => {
-          alert(err.error?.detail ?? 'Failed to delete account');
-        },
-      });
-    }
+    dialogRef.afterClosed().subscribe((confirmed) => {
+      if (confirmed) {
+        this.authService.deleteAccount().subscribe({
+          next: (res) => {
+            this.snackBar.open(res.message, 'Close', { duration: 3000 });
+            this.router.navigate(['/login']);
+          },
+          error: (err) => {
+            this.snackBar.open(err.error?.detail ?? 'Failed to delete account', 'Close', { duration: 3000 });
+          },
+        });
+      }
+    });
   }
 }
