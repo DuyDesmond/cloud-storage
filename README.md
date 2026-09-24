@@ -1,18 +1,33 @@
-# cloud-fullstack-intern
+# Nephos Cloud Storage
 
-The repo is used for interns of Cloud Fullstack program to practice following the training plan
+Nephos is a comprehensive, scalable cloud storage solution built using a modern microservices architecture. Designed as a robust file management platform, it enables users to securely store, organize, and share their files in the cloud.
 
-## Project Overview
+## Key Features
 
-- Project is under development. The main theme will be announce in the near future.
+- **Secure Authentication:** User registration, login, and secure session management.
+- **File Management:** Upload, download, preview, and organize files and folders.
+- **Sharing & Collaboration:** Generate public or password-protected links to share files securely.
+- **Storage Quota Management:** Track and enforce storage limits per user.
+- **Trash & Recovery:** Safely delete items and restore them from the trash bin.
+- **Scalable Architecture:** Designed with Kubernetes and AWS to handle high traffic and large file operations.
 
-## TechStack
+## Architecture Overview
 
-- **Frontend:** Angular
-- **Backend:** Python, FastAPI
-- **Cloud:** AWS
-- **DevOps:** Docker, Terraform, Kubernetes
-- **Database:** PostgreSQL, MongoDB
+The system is built on a distributed microservices architecture (v2):
+
+- **Frontend:** An Angular-based Single Page Application (SPA) providing a responsive and dynamic user interface.
+- **API Gateway:** NGINX acting as the central entry point, routing requests to the appropriate microservices.
+- **Auth Service:** A FastAPI microservice handling user identity, authentication, and token validation using PostgreSQL.
+- **Storage Service:** A FastAPI microservice managing file metadata, storage quotas, and interactions with Amazon S3.
+- **Caching & Messaging:** Redis is used for caching, and RabbitMQ handles asynchronous event processing between services.
+
+## Tech Stack
+
+- **Frontend:** Angular, SCSS, RxJS
+- **Backend:** Python, FastAPI, SQLAlchemy
+- **Databases:** PostgreSQL (Relational Data), Redis (Caching)
+- **Message Broker:** RabbitMQ
+- **Infrastructure / DevOps:** Docker, Kubernetes (Amazon EKS), Terraform, AWS (S3, RDS, ECR, CloudFront, Secrets Manager)
 
 ## Start the servers
 
