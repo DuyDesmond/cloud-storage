@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any
 import aio_pika
+import uuid
 from fastapi import FastAPI
 from app.core.config import settings
 
@@ -22,18 +23,22 @@ class RabbitMQClient:
             await self.connection.close()
             logger.info("Closed RabbitMQ connection")
 
-    async def publish_event(self, routing_key: str, data: dict[str, Any]):
+    async def publish_event(self, routing_key: str, data: dict[str, Any], correlation_id: str | None = None):
         if not self.channel:
             logger.error("Cannot publish event: channel is not open")
             return
-            
+
+        corr_id = correlation_id or str(uuid.uuid4())
+
         message = aio_pika.Message(
             body=json.dumps(data).encode("utf-8"),
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
             content_type="application/json",
+            correlation_id=corr_id,
         )
         await self.channel.default_exchange.publish(message, routing_key=routing_key)
-        logger.info(f"Published event to {routing_key}")
+        logger.info(f"Published event to {routing_key}",
+                    extra={"correlation_id": corr_id})
 
 rabbitmq_client = RabbitMQClient()
 

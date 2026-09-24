@@ -10,6 +10,7 @@ on:
       - "terraform/**"
       - "terraform-v2/**"
       - ".github/workflows/duy-backend-cd.yml"
+      
 
 permissions:
   id-token: write # Required for OIDC

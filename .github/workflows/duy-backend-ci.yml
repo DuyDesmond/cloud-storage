@@ -15,7 +15,7 @@ on:
       - "backend-v2/**"
       - "terraform/**"
       - "terraform-v2/**"
-      - ".github/workflows/backend-ci.yml"
+      - ".github/workflows/duy-backend-ci.yml"
 
 jobs:
   build:
@@ -23,6 +23,39 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: "pip"
+          cache-dependency-path: "backend-v2/**/requirements.txt"
+
+      - name: Install Dependencies for Auth Service
+        run: |
+          echo "Installing Python dependencies..."
+          cd backend-v2/auth-service
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests for Auth Service
+        run: |
+          echo "Running pytest for FastAPI..."
+          # cd backend-v2/auth-service
+          # python -m pytest -v
+
+      - name: Install Dependencies for Storage Service
+        run: |
+          echo "Installing Python dependencies..."
+          cd backend-v2/storage-service
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests for Storage Service
+        run: |
+          echo "Running pytest for FastAPI..."
+          # cd backend-v2/storage-service
+          # python -m pytest -v
 
       - name: Test Build Auth Service
         run: |

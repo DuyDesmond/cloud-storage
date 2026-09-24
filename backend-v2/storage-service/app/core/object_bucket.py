@@ -54,6 +54,7 @@ class R2StorageGateway(StorageGateway):
             aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key,
             region_name=self.region_name,
+            verify=False
         ) as client:
             yield client
 
@@ -240,4 +241,7 @@ class S3StorageGateway(R2StorageGateway):
 def get_storage_gateway() -> StorageGateway:
     if settings.ENVIRONMENT == "dev":
         return S3StorageGateway()
-    return R2StorageGateway()
+    elif settings.ENVIRONMENT == "local":
+        return R2StorageGateway()
+    else:
+        return R2StorageGateway()

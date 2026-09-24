@@ -15,7 +15,7 @@ on:
       - "frontend/**"
       - "terraform/**"
       - "terraform-v2/**"
-      - ".github/workflows/frontend-ci.yml"
+      - ".github/workflows/duy-frontend-ci.yml"
 
 jobs:
   build:

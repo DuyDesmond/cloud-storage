@@ -16,9 +16,47 @@ The repo is used for interns of Cloud Fullstack program to practice following th
 
 ## Start the servers
 
-- Frontend: `npm start`
-- Backend: `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
-- Backend-v2: `docker compose up --build`
+### Frontend (Angular)
+
+1. Navigate to the `frontend` directory:
+   ```bash
+   cd frontend
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development server:
+   ```bash
+   npm start
+   ```
+
+### Backend (Microservices v2)
+
+1. Navigate to the `backend-v2` directory:
+   ```bash
+   cd backend-v2
+   ```
+2. Start the services using Docker Compose:
+   ```bash
+   docker compose up --build
+   ```
+   _(Alternatively, on Windows, you can run the `start-backend-v2.bat` script from the root directory)._
+
+### Backend (v1 Monolith - Legacy)
+
+1. Navigate to the `backend` directory:
+   ```bash
+   cd backend
+   ```
+2. Start the server:
+   ```bash
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+## How to Deploy
+
+The deployment uses Terraform to provision AWS infrastructure and Kubernetes to orchestrate the backend services.
 
 ```
 cloud-fullstack-intern

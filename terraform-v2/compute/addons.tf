@@ -85,6 +85,9 @@ module "eks_blueprints_addons" {
       ]
     }
   }
+  depends_on = [
+    module.eks.eks_managed_node_groups
+  ]
 }
 
 provider "helm" {

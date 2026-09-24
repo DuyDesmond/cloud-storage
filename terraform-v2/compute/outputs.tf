@@ -10,6 +10,11 @@ output "cluster_endpoint" {
   value = module.eks.cluster_endpoint
 }
 
+output "eks_managed_node_groups" {
+  description = "Map of attribute maps for all EKS managed node groups created"
+  value       = module.eks.eks_managed_node_groups
+}
+
 output "data_vpc_id" {
   value = try(data.terraform_remote_state.data.outputs.vpc_id, null)
 }
