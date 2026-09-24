@@ -1,3 +1,5 @@
+argon2_cffi
+apscheduler
 pytest
 pytest-env
 email-validator
@@ -10,3 +12,5 @@ asyncpg
 PyJWT
 passlib
 pydantic-settings
+boto3
+python-multipart

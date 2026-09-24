@@ -1,0 +1,137 @@
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px 0 24px;
+
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+}
+
+.dialog-body {
+  padding: 16px 24px !important;
+  min-width: 420px;
+}
+
+.dropzone {
+  border: 2px dashed #0058bc;
+  border-radius: 16px;
+  padding: 32px 16px;
+  text-align: center;
+  background-color: #f8f9ff;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  &.active {
+    background-color: rgba(0, 88, 188, 0.08);
+    border-color: #004596;
+    transform: scale(1.01);
+  }
+
+  .cloud-icon {
+    font-size: 48px;
+    width: 48px;
+    height: 48px;
+    color: #0058bc;
+    margin-bottom: 8px;
+  }
+
+  .primary-text {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #0b1c30;
+  }
+
+  .secondary-text {
+    margin: 4px 0 16px 0;
+    font-size: 12px;
+    color: #717786;
+  }
+
+  .browse-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+.selected-files-list {
+  margin-top: 16px;
+  max-height: 150px;
+  overflow-y: auto;
+
+  h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    color: #50616b;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: #eff4ff;
+      border-radius: 8px;
+      margin-bottom: 6px;
+
+      .file-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow: hidden;
+
+        mat-icon {
+          font-size: 18px;
+          width: 18px;
+          height: 18px;
+          color: #0058bc;
+        }
+
+        .file-name {
+          font-size: 13px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+    }
+  }
+}
+
+.extra-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.folder-creation-box {
+  padding: 12px 0;
+
+  h3 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+  }
+
+  .full-width {
+    width: 100%;
+  }
+
+  .folder-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}

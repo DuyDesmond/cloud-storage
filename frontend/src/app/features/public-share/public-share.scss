@@ -1,0 +1,143 @@
+@use '../../shared/styles/brand-logo' as brand;
+
+.public-share-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+}
+
+.public-header {
+  height: 64px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  background-color: var(--mat-sys-surface-container);
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+
+  .brand-container {
+    @include brand.nephos-brand;
+  }
+}
+
+.public-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.loading-state,
+.error-state,
+.file-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+  gap: 16px;
+  
+  .huge-icon {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 16px;
+  }
+  
+  h2 {
+    font-size: 24px;
+    margin: 0;
+  }
+  
+  p {
+    color: var(--mat-sys-on-surface-variant);
+    font-size: 16px;
+    max-width: 400px;
+    margin-bottom: 24px;
+  }
+}
+
+.file-view {
+  background: var(--mat-sys-surface-container);
+  border-radius: 24px;
+  padding: 64px 32px;
+  max-width: 600px;
+  margin: auto;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+
+  .file-name {
+    font-size: 28px;
+    font-weight: 500;
+    margin: 0;
+    word-break: break-all;
+  }
+  
+  .file-meta {
+    color: var(--mat-sys-on-surface-variant);
+    margin: 8px 0 32px;
+  }
+
+  .download-btn {
+    padding: 0 32px;
+    height: 48px;
+    font-size: 16px;
+    border-radius: 24px;
+    
+    mat-icon {
+      margin-right: 8px;
+    }
+  }
+}
+
+.folder-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+
+  .folder-header {
+    margin-bottom: 24px;
+    
+    h2 {
+      font-size: 24px;
+      font-weight: 500;
+      margin: 0;
+    }
+  }
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 64px 24px;
+    background-color: var(--mat-sys-surface-container);
+    border-radius: 24px;
+    border: 1px dashed var(--mat-sys-outline);
+    
+    .empty-icon {
+      font-size: 48px;
+      width: 48px;
+      height: 48px;
+      color: var(--mat-sys-outline);
+      margin-bottom: 16px;
+    }
+    
+    .empty-label {
+      color: var(--mat-sys-on-surface-variant);
+      font-size: 16px;
+      margin: 0;
+    }
+  }
+}

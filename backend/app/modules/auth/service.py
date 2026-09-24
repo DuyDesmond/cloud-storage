@@ -7,6 +7,8 @@ from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_token, decode_token
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth import schemas
+from app.modules.files.repository import FileOperationsRepository
+from app.modules.files.service import R2StorageGateway
 
 
 class AuthService:
@@ -131,6 +133,26 @@ class AuthService:
         return {"message": "Successfully logged out"}
 
     async def delete_account(self, conn: asyncpg.Connection, user_id: uuid.UUID, response: Response) -> dict:
+        # 1) Delete user objects from object storage (best-effort)
+        files_repo = FileOperationsRepository()
+        storage = R2StorageGateway()
+
+        try:
+            files = await files_repo.list_files_by_owner(conn, user_id)
+        except Exception:
+            files = []
+
+        for f in files:
+            sk = f.get("storage_key")
+            if sk:
+                try:
+                    await storage.delete_object(sk)
+                except Exception:
+                    # Log and continue; account deletion is irreversible so best-effort is acceptable
+                    pass
+
+        # 2) Delete user row (DB cascades files/folders/acl entries)
+
         deleted = await self.repo.delete_user(conn, user_id)
         if not deleted:
             raise HTTPException(
@@ -156,7 +178,6 @@ class AuthService:
 
         # TODO: Integrate Email Service (Resend/SMTP) here
         # E.g., await send_reset_email(user["email"], reset_token)
-        print(f" RESET TOKEN for {user['email']}: {reset_token}")
 
         return {"message": "If that email is registered, a password reset link has been sent."}
 

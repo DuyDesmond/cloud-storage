@@ -1,0 +1,57 @@
+<div class="preview-dialog-container">
+  <div class="dialog-header">
+    <div class="title-section">
+      <mat-icon class="file-icon">description</mat-icon>
+      <h2 mat-dialog-title>{{ item.name }}</h2>
+    </div>
+    <button mat-icon-button (click)="close()" class="close-button">
+      <mat-icon>close</mat-icon>
+    </button>
+  </div>
+
+  <mat-divider></mat-divider>
+
+  <mat-dialog-content class="dialog-content">
+    @if (isLoading()) {
+    <div class="state-container">
+      <mat-spinner diameter="40"></mat-spinner>
+      <p>Loading preview...</p>
+    </div>
+    } @else if (hasError()) {
+    <div class="state-container error">
+      <mat-icon>error_outline</mat-icon>
+      <p>Failed to load file for preview.</p>
+    </div>
+    } @else if (fileType() === 'unsupported') {
+    <div class="state-container">
+      <mat-icon class="huge-icon">visibility_off</mat-icon>
+      <p>Preview is not available for this file type.</p>
+    </div>
+    } @else if (previewUrl()) {
+      <div class="preview-wrapper">
+        @switch (fileType()) {
+          @case ('image') {
+            <img [src]="previewUrl()" [alt]="item.name" class="preview-image" />
+          }
+          @case ('video') {
+            <video [src]="previewUrl()" controls class="preview-video">
+              Your browser does not support the video tag.
+            </video>
+          }
+          @case ('pdf') {
+            <embed [src]="previewUrl()" type="application/pdf" class="preview-embed" />
+          }
+          @case ('text') {
+            <iframe [src]="previewUrl()" class="preview-iframe"></iframe>
+          }
+        }
+      </div>
+    }
+  </mat-dialog-content>
+
+  <mat-divider></mat-divider>
+
+  <mat-dialog-actions align="end" class="dialog-actions">
+    <button mat-button (click)="close()">Close</button>
+  </mat-dialog-actions>
+</div>

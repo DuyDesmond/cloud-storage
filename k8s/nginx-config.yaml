@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+data:
+  use-forwarded-headers: "true"
+  log-format-upstream: '{"time_local":"$time_iso8601","remote_addr":"$remote_addr","request":"$request","status": "$status","body_bytes_sent":"$body_bytes_sent","request_time":"$request_time","http_user_agent":"$http_user_agent","correlation_id":"$http_x_correlation_id"}'
